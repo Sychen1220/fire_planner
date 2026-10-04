@@ -1,0 +1,2 @@
+"""Annual living-budget calculations."""
+

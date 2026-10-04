@@ -1,0 +1,2 @@
+"""Domain input validation rules."""
+

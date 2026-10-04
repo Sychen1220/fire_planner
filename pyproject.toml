@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fire-planner"
+version = "0.1.0"
+description = "半 FIRE 个人财务规划与人生决策工具"
+requires-python = ">=3.11"
+dependencies = [
+    "plotly>=5.24,<7",
+    "streamlit>=1.39,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<9",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+

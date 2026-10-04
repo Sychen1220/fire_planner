@@ -1,0 +1,2 @@
+"""Semi-FIRE scenario evaluation."""
+
