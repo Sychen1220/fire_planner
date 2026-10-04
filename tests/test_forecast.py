@@ -79,6 +79,47 @@ def test_forecast_supports_monthly_saving_schedule() -> None:
     assert [point.closing_assets_cents for point in points] == [1_200_000, 1_100_000]
 
 
+def test_forecast_applies_annual_return_monthly_with_compounding() -> None:
+    points = forecast_assets(
+        initial_assets_cents=12_000_000,
+        as_of_month=YearMonth(2027, 1),
+        end_month=YearMonth(2027, 2),
+        monthly_saving_cents=0,
+        events=[],
+        annual_return_bps=1_200,
+    )
+
+    assert [point.investment_return_cents for point in points] == [120_000, 121_200]
+    assert [point.closing_assets_cents for point in points] == [12_120_000, 12_241_200]
+
+
+def test_forecast_does_not_generate_return_on_negative_assets() -> None:
+    points = forecast_assets(
+        initial_assets_cents=1_000,
+        as_of_month=YearMonth(2027, 1),
+        end_month=YearMonth(2027, 2),
+        monthly_saving_cents=-2_000,
+        events=[],
+        annual_return_bps=1_200,
+    )
+
+    assert points[0].closing_assets_cents == -990
+    assert points[1].investment_return_cents == 0
+    assert points[1].closing_assets_cents == -2_990
+
+
+def test_forecast_rejects_return_above_one_hundred_percent() -> None:
+    with pytest.raises(ValueError, match="annual_return_bps must be"):
+        forecast_assets(
+            initial_assets_cents=100_000,
+            as_of_month=YearMonth(2027, 1),
+            end_month=YearMonth(2027, 1),
+            monthly_saving_cents=0,
+            events=[],
+            annual_return_bps=10_001,
+        )
+
+
 def test_forecast_includes_events_in_exit_month() -> None:
     points = forecast_assets(
         initial_assets_cents=100_000,

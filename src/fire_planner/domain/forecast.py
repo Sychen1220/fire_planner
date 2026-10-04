@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Mapping, Sequence
 
 from .models import AssetEvent, YearMonth
 from .validation import (
     MAX_PLANNING_MONTHS,
+    require_basis_points,
     require_non_negative_cents,
     require_signed_cents,
 )
@@ -18,6 +20,7 @@ class AssetPoint:
     month: YearMonth
     opening_assets_cents: int
     monthly_saving_cents: int
+    investment_return_cents: int
     one_time_income_cents: int
     one_time_expense_cents: int
     closing_assets_cents: int
@@ -28,6 +31,7 @@ class AssetPoint:
             raise TypeError("month must be a YearMonth")
         require_signed_cents(self.opening_assets_cents, "opening_assets_cents")
         require_signed_cents(self.monthly_saving_cents, "monthly_saving_cents")
+        require_signed_cents(self.investment_return_cents, "investment_return_cents")
         require_non_negative_cents(
             self.one_time_income_cents,
             "one_time_income_cents",
@@ -40,6 +44,7 @@ class AssetPoint:
         expected_closing = (
             self.opening_assets_cents
             + self.monthly_saving_cents
+            + self.investment_return_cents
             + self.one_time_income_cents
             - self.one_time_expense_cents
         )
@@ -57,10 +62,12 @@ def forecast_assets(
     monthly_saving_cents: int,
     events: Sequence[AssetEvent],
     monthly_saving_by_month: Mapping[YearMonth, int] | None = None,
+    annual_return_bps: int = 0,
 ) -> list[AssetPoint]:
-    """Return inclusive month-end balances, optionally with a monthly schedule."""
+    """Return inclusive month-end balances with monthly investment returns."""
     require_non_negative_cents(initial_assets_cents, "initial_assets_cents")
     require_signed_cents(monthly_saving_cents, "monthly_saving_cents")
+    require_basis_points(annual_return_bps, "annual_return_bps", allow_zero=True)
     if not isinstance(as_of_month, YearMonth) or not isinstance(end_month, YearMonth):
         raise TypeError("as_of_month and end_month must be YearMonth values")
 
@@ -109,9 +116,14 @@ def forecast_assets(
             one_time_expense_cents,
             "one_time_expense_cents",
         )
+        investment_return_cents = _monthly_investment_return_cents(
+            opening_assets_cents=opening_assets_cents,
+            annual_return_bps=annual_return_bps,
+        )
         closing_assets_cents = (
             opening_assets_cents
             + month_saving_cents
+            + investment_return_cents
             + one_time_income_cents
             - one_time_expense_cents
         )
@@ -122,6 +134,7 @@ def forecast_assets(
                 month=month,
                 opening_assets_cents=opening_assets_cents,
                 monthly_saving_cents=month_saving_cents,
+                investment_return_cents=investment_return_cents,
                 one_time_income_cents=one_time_income_cents,
                 one_time_expense_cents=one_time_expense_cents,
                 closing_assets_cents=closing_assets_cents,
@@ -131,6 +144,26 @@ def forecast_assets(
         opening_assets_cents = closing_assets_cents
 
     return points
+
+
+def _monthly_investment_return_cents(
+    *,
+    opening_assets_cents: int,
+    annual_return_bps: int,
+) -> int:
+    """Calculate one month's return on positive opening assets.
+
+    Negative balances represent a funding shortfall rather than an investable
+    portfolio, so they do not generate a modeled investment return.
+    """
+    if opening_assets_cents <= 0 or annual_return_bps == 0:
+        return 0
+    monthly_return = (
+        Decimal(opening_assets_cents)
+        * Decimal(annual_return_bps)
+        / Decimal(10_000 * 12)
+    )
+    return int(monthly_return.quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
 def _group_events(

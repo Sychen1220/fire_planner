@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, MutableMapping, Sequence
 
 import streamlit as st
@@ -42,7 +43,13 @@ def render_calculation_page() -> None:
     st.caption("从当前资产逐月推演到退出节点，并展示每一步公式，不隐藏计算过程。")
 
     st.subheader("1｜设置测算假设")
-    as_of_date, horizon_months, monthly_income_yuan, withdrawal_rate = (
+    (
+        as_of_date,
+        horizon_months,
+        monthly_income_yuan,
+        withdrawal_rate,
+        annual_return_rate,
+    ) = (
         _render_forecast_inputs()
     )
     as_of_month = YearMonth.from_date(as_of_date)
@@ -104,51 +111,13 @@ def render_calculation_page() -> None:
         on_click=_add_income_row,
     )
 
-    expense_columns = st.columns(2)
-    with expense_columns[0]:
-        one_time_expense_yuan = int(
-            st.number_input(
-                "一次性额外支出（元）",
-                min_value=0,
-                max_value=1_000_000_000,
-                value=0,
-                step=10_000,
-                help="例如搬家、旅行或大额消费。",
-                key="calculation_one_time_expense",
-            )
-        )
-    with expense_columns[1]:
-        expense_month = _month_selectbox(
-            "支出发生月份",
-            month_options,
-            default_offset=min(4, horizon_months),
-            key="calculation_expense_month",
-            disabled=one_time_expense_yuan == 0,
-        )
-
     current_assets_cents = get_investable_assets_cents(st.session_state)
-    events = _build_events(
-        income_rows=one_time_income_rows,
-        expense_yuan=one_time_expense_yuan,
-        expense_month=expense_month,
-    )
+    events = _build_events(income_rows=one_time_income_rows)
     monthly_saving_by_month = {
         month: yuan_to_cents(monthly_income_yuan)
-        - round(
-            _annual_budget_for_forecast_year(
-                year=month.year,
-                state=st.session_state,
-            ).total_cents
-            / 12
-        )
+        - _monthly_budget_cents(year=month.year, state=st.session_state)
         if income_start_month <= month <= income_end_month
-        else -round(
-            _annual_budget_for_forecast_year(
-                year=month.year,
-                state=st.session_state,
-            ).total_cents
-            / 12
-        )
+        else -_monthly_budget_cents(year=month.year, state=st.session_state)
         for month in month_options
     }
     points = forecast_assets(
@@ -158,6 +127,7 @@ def render_calculation_page() -> None:
         monthly_saving_cents=0,
         events=events,
         monthly_saving_by_month=monthly_saving_by_month,
+        annual_return_bps=round(annual_return_rate * 100),
     )
 
     st.subheader("2｜选择三个退出节点")
@@ -235,7 +205,7 @@ def render_calculation_page() -> None:
     summary_columns[3].metric("预测期末资产", format_wan(points[-1].closing_assets_cents))
 
     st.code(
-        "月末资产 = 月初资产 +（月收入 − 当年生活预算 ÷ 12）+ 一次性收入 − 一次性支出",
+        "月末资产 = 月初资产 +（月薪 − 当年生活预算 ÷ 12）+ 一次性收入 + 资产预期回报",
         language=None,
     )
     st.plotly_chart(
@@ -250,7 +220,7 @@ def render_calculation_page() -> None:
         config={"displayModeBar": False},
     )
     st.caption(
-        "当前资产单独标为起点；后续每个点是当月月末资产。月收入只在生效区间计入，且不假设投资收益。"
+        f"当前资产单独标为起点；后续每个点是当月月末资产。资产预期回报按月计入，年化 {annual_return_rate:.2f}%。"
     )
     st.caption(
         f"未单独填写的年份沿用 {int(st.session_state.get('budget_year', default_budget_year()))} 年生活预算。"
@@ -286,8 +256,8 @@ def render_calculation_page() -> None:
         _render_formula_breakdown(chr(65 + index), result, withdrawal_rate)
 
 
-def _render_forecast_inputs() -> tuple[date, int, int, float]:
-    columns = st.columns(4)
+def _render_forecast_inputs() -> tuple[date, int, int, float, float]:
+    columns = st.columns(5)
     with columns[0]:
         as_of_date = st.date_input(
             "测算起点",
@@ -327,7 +297,25 @@ def _render_forecast_inputs() -> tuple[date, int, int, float]:
                 key="calculation_withdrawal_rate",
             )
         )
-    return as_of_date, horizon_months, monthly_income_yuan, withdrawal_rate
+    with columns[4]:
+        annual_return_rate = float(
+            st.number_input(
+                "预期年化收益率（%）",
+                min_value=0.0,
+                max_value=100.0,
+                value=0.0,
+                step=0.1,
+                key="calculation_annual_return_rate",
+                help="按月计入资产预测；负资产不产生投资回报。",
+            )
+        )
+    return (
+        as_of_date,
+        horizon_months,
+        monthly_income_yuan,
+        withdrawal_rate,
+        annual_return_rate,
+    )
 
 
 def _add_income_row() -> None:
@@ -347,6 +335,15 @@ def _annual_budget_for_forecast_year(
     )
     budget_year = year if year == planning_year or has_explicit_budget else planning_year
     return get_annual_budget(year=budget_year, state=state)
+
+
+def _monthly_budget_cents(*, year: int, state: MutableMapping[str, Any]) -> int:
+    annual_budget_cents = _annual_budget_for_forecast_year(year=year, state=state).total_cents
+    return int(
+        (Decimal(annual_budget_cents) / Decimal(12)).quantize(
+            Decimal(1), rounding=ROUND_HALF_UP
+        )
+    )
 
 
 def _month_selectbox(
@@ -373,8 +370,6 @@ def _month_selectbox(
 def _build_events(
     *,
     income_rows: Sequence[tuple[int, YearMonth]],
-    expense_yuan: int,
-    expense_month: YearMonth,
 ) -> list[AssetEvent]:
     events: list[AssetEvent] = []
     for index, (income_yuan, income_month) in enumerate(income_rows):
@@ -385,16 +380,6 @@ def _build_events(
                 event_month=income_month,
                 event_type=AssetEventType.OTHER_INCOME,
                 amount_cents=yuan_to_cents(income_yuan),
-            )
-        )
-    if expense_yuan:
-        events.append(
-            AssetEvent(
-                id="calculation-expense",
-                plan_id="current-plan",
-                event_month=expense_month,
-                event_type=AssetEventType.EXTRA_EXPENSE,
-                amount_cents=yuan_to_cents(expense_yuan),
             )
         )
     return events
@@ -465,9 +450,9 @@ def _forecast_row(point: AssetPoint) -> dict[str, str]:
     return {
         "月份": str(point.month),
         "月初资产": format_cny(point.opening_assets_cents),
-        "+ 月度结余（收入−预算）": format_cny(point.monthly_saving_cents),
+        "+ 月薪−月支出": format_cny(point.monthly_saving_cents),
+        "+ 资产预期回报": format_cny(point.investment_return_cents),
         "+ 一次性收入": format_cny(point.one_time_income_cents),
-        "− 一次性支出": format_cny(point.one_time_expense_cents),
         "= 月末资产": format_cny(point.closing_assets_cents),
     }
 
