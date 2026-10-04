@@ -10,6 +10,7 @@ if str(SRC_DIRECTORY) not in sys.path:
     sys.path.insert(0, str(SRC_DIRECTORY))
 
 from fire_planner.ui.pages.assets import render_assets_page
+from fire_planner.ui.pages.calculation import render_calculation_page
 from fire_planner.ui.pages.home import render_home_page
 from fire_planner.ui.pages.living import render_living_page
 
@@ -18,6 +19,7 @@ PAGE_RENDERERS = {
     "首页": render_home_page,
     "我的生活": render_living_page,
     "我的资产": render_assets_page,
+    "开始测算": render_calculation_page,
 }
 
 
@@ -45,6 +47,7 @@ def main() -> None:
             "导航",
             options=list(PAGE_RENDERERS),
             label_visibility="collapsed",
+            key="selected_page",
         )
         st.divider()
         st.caption("当前规划提款率：3.50%")

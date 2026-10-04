@@ -56,4 +56,15 @@ def render_home_page() -> None:
             st.warning("请填写当前金融资产")
         st.info("下一步将填写资产增长和退出方案，生成最早、平衡和高安全三个自由节点。")
 
+    st.button(
+        "开始测算自由节点",
+        type="primary",
+        width="stretch",
+        on_click=_open_calculation_page,
+    )
+
     st.caption("3.5% 是长期规划提款率，不代表任何投资收益保证。")
+
+
+def _open_calculation_page() -> None:
+    st.session_state["selected_page"] = "开始测算"
