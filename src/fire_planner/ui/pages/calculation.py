@@ -333,6 +333,13 @@ def _render_scenario_inputs(
                 on_click=_add_scenario_income_row,
                 args=(row_count_key,),
             )
+            st.button(
+                f"− {label} 删除最后一条收入",
+                key=f"remove_calculation_{scenario_id}_income_row",
+                on_click=_remove_scenario_income_row,
+                args=(scenario_id, row_count_key),
+                disabled=row_count == 0,
+            )
             inputs.append(
                 ScenarioInput(
                     scenario_id=scenario_id,
@@ -347,6 +354,12 @@ def _render_scenario_inputs(
         "＋ 添加退出方案",
         key="add_calculation_scenario",
         on_click=_add_scenario,
+    )
+    st.button(
+        "− 删除最后一个退出方案",
+        key="remove_calculation_scenario",
+        on_click=_remove_last_scenario,
+        disabled=scenario_count <= 1,
     )
     return inputs
 
@@ -363,6 +376,48 @@ def _add_scenario() -> None:
     st.session_state["calculation_scenario_count"] = (
         int(st.session_state.get("calculation_scenario_count", 1)) + 1
     )
+
+
+def _remove_last_scenario() -> None:
+    scenario_count = int(st.session_state.get("calculation_scenario_count", 1))
+    if scenario_count <= 1:
+        return
+    scenario_id = _scenario_id(scenario_count - 1)
+    keys_to_remove = [
+        f"calculation_{scenario_id}_exit_month",
+        f"calculation_{scenario_id}_monthly_income",
+        f"calculation_{scenario_id}_income_row_count",
+    ]
+    row_count = int(
+        st.session_state.get(f"calculation_{scenario_id}_income_row_count", 0)
+    )
+    keys_to_remove.extend(
+        key
+        for row_index in range(row_count)
+        for key in (
+            f"calculation_{scenario_id}_one_time_income_{row_index}",
+            f"calculation_{scenario_id}_income_month_{row_index}",
+        )
+    )
+    for key in keys_to_remove:
+        st.session_state.pop(key, None)
+    st.session_state["calculation_scenario_count"] = scenario_count - 1
+
+
+def _remove_scenario_income_row(scenario_id: str, row_count_key: str) -> None:
+    row_count = int(st.session_state.get(row_count_key, 0))
+    if row_count <= 0:
+        return
+    row_index = row_count - 1
+    st.session_state.pop(
+        f"calculation_{scenario_id}_one_time_income_{row_index}",
+        None,
+    )
+    st.session_state.pop(
+        f"calculation_{scenario_id}_income_month_{row_index}",
+        None,
+    )
+    st.session_state[row_count_key] = row_index
 
 
 def _add_scenario_income_row(row_count_key: str) -> None:
