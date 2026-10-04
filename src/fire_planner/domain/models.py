@@ -290,6 +290,7 @@ class Scenario:
 @dataclass(frozen=True, slots=True)
 class ScenarioResult:
     scenario_id: str
+    exit_month: YearMonth
     exit_assets_cents: int
     annual_budget_cents: int
     annual_withdrawal_capacity_cents: int
@@ -307,6 +308,8 @@ class ScenarioResult:
             "scenario_id",
             require_non_blank(self.scenario_id, "scenario_id"),
         )
+        if not isinstance(self.exit_month, YearMonth):
+            raise TypeError("exit_month must be a YearMonth")
         for field_name in (
             "exit_assets_cents",
             "annual_budget_cents",

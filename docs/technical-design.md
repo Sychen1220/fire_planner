@@ -257,6 +257,7 @@ Scenario:
 ```python
 ScenarioResult:
     scenario_id: str
+    exit_month: YearMonth
     exit_assets_cents: int
     annual_budget_cents: int
     annual_withdrawal_capacity_cents: int
