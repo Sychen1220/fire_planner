@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from .models import AssetEvent, YearMonth
 from .validation import (
@@ -27,7 +27,7 @@ class AssetPoint:
         if not isinstance(self.month, YearMonth):
             raise TypeError("month must be a YearMonth")
         require_signed_cents(self.opening_assets_cents, "opening_assets_cents")
-        require_non_negative_cents(self.monthly_saving_cents, "monthly_saving_cents")
+        require_signed_cents(self.monthly_saving_cents, "monthly_saving_cents")
         require_non_negative_cents(
             self.one_time_income_cents,
             "one_time_income_cents",
@@ -56,10 +56,11 @@ def forecast_assets(
     end_month: YearMonth,
     monthly_saving_cents: int,
     events: Sequence[AssetEvent],
+    monthly_saving_by_month: Mapping[YearMonth, int] | None = None,
 ) -> list[AssetPoint]:
-    """Return inclusive month-end asset balances without investment returns."""
+    """Return inclusive month-end balances, optionally with a monthly schedule."""
     require_non_negative_cents(initial_assets_cents, "initial_assets_cents")
-    require_non_negative_cents(monthly_saving_cents, "monthly_saving_cents")
+    require_signed_cents(monthly_saving_cents, "monthly_saving_cents")
     if not isinstance(as_of_month, YearMonth) or not isinstance(end_month, YearMonth):
         raise TypeError("as_of_month and end_month must be YearMonth values")
 
@@ -74,12 +75,26 @@ def forecast_assets(
         as_of_month=as_of_month,
         end_month=end_month,
     )
+    if monthly_saving_by_month is not None:
+        for month, saving in monthly_saving_by_month.items():
+            if not isinstance(month, YearMonth):
+                raise TypeError("monthly_saving_by_month keys must be YearMonth values")
+            if month < as_of_month or month > end_month:
+                raise ValueError(
+                    f"monthly saving for {month} is outside the forecast range"
+                )
+            require_signed_cents(saving, f"monthly_saving_by_month[{month}]")
     points: list[AssetPoint] = []
     opening_assets_cents = initial_assets_cents
 
     for offset in range(forecast_months + 1):
         month = as_of_month.add_months(offset)
         month_events = events_by_month.get(month, ())
+        month_saving_cents = (
+            monthly_saving_by_month.get(month, monthly_saving_cents)
+            if monthly_saving_by_month is not None
+            else monthly_saving_cents
+        )
         one_time_income_cents = sum(
             event.amount_cents for event in month_events if event.is_income
         )
@@ -96,7 +111,7 @@ def forecast_assets(
         )
         closing_assets_cents = (
             opening_assets_cents
-            + monthly_saving_cents
+            + month_saving_cents
             + one_time_income_cents
             - one_time_expense_cents
         )
@@ -106,7 +121,7 @@ def forecast_assets(
             AssetPoint(
                 month=month,
                 opening_assets_cents=opening_assets_cents,
-                monthly_saving_cents=monthly_saving_cents,
+                monthly_saving_cents=month_saving_cents,
                 one_time_income_cents=one_time_income_cents,
                 one_time_expense_cents=one_time_expense_cents,
                 closing_assets_cents=closing_assets_cents,

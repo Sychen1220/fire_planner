@@ -37,7 +37,7 @@ def render_calculation_page() -> None:
     st.caption("从当前资产逐月推演到退出节点，并展示每一步公式，不隐藏计算过程。")
 
     st.subheader("1｜设置测算假设")
-    as_of_date, horizon_months, monthly_saving_yuan, withdrawal_rate = (
+    as_of_date, horizon_months, monthly_income_yuan, withdrawal_rate = (
         _render_forecast_inputs()
     )
     as_of_month = YearMonth.from_date(as_of_date)
@@ -46,27 +46,54 @@ def render_calculation_page() -> None:
         as_of_month.add_months(offset) for offset in range(horizon_months + 1)
     ]
 
-    event_columns = st.columns(2)
-    with event_columns[0]:
-        one_time_income_yuan = int(
-            st.number_input(
-                "一次性收入（元）",
-                min_value=0,
-                max_value=1_000_000_000,
-                value=0,
-                step=10_000,
-                help="例如年终奖、赔偿或股票兑现。",
-                key="calculation_one_time_income",
-            )
-        )
-        income_month = _month_selectbox(
-            "收入发生月份",
+    st.markdown("**月收入生效区间**")
+    income_period_columns = st.columns(2)
+    with income_period_columns[0]:
+        income_start_month = _month_selectbox(
+            "月收入开始月份",
             month_options,
-            default_offset=min(2, horizon_months),
-            key="calculation_income_month",
-            disabled=one_time_income_yuan == 0,
+            default_offset=0,
+            key="calculation_income_start_month",
         )
-    with event_columns[1]:
+    with income_period_columns[1]:
+        income_end_month = _month_selectbox(
+            "月收入结束月份",
+            month_options,
+            default_offset=horizon_months,
+            key="calculation_income_end_month",
+        )
+    if income_end_month < income_start_month:
+        st.error("月收入结束月份不能早于开始月份。")
+        return
+
+    st.markdown("**一次性收入（可添加多条）**")
+    one_time_income_rows: list[tuple[int, YearMonth]] = []
+    for index in range(3):
+        income_columns = st.columns(2)
+        with income_columns[0]:
+            amount_yuan = int(
+                st.number_input(
+                    f"一次性收入 {index + 1}（元）",
+                    min_value=0,
+                    max_value=1_000_000_000,
+                    value=0,
+                    step=10_000,
+                    key=f"calculation_one_time_income_{index}",
+                )
+            )
+        with income_columns[1]:
+            event_month = _month_selectbox(
+                f"收入 {index + 1} 发生月份",
+                month_options,
+                default_offset=min((index + 1) * 3, horizon_months),
+                key=f"calculation_income_month_{index}",
+                disabled=amount_yuan == 0,
+            )
+        if amount_yuan:
+            one_time_income_rows.append((amount_yuan, event_month))
+
+    expense_columns = st.columns(2)
+    with expense_columns[0]:
         one_time_expense_yuan = int(
             st.number_input(
                 "一次性额外支出（元）",
@@ -78,6 +105,7 @@ def render_calculation_page() -> None:
                 key="calculation_one_time_expense",
             )
         )
+    with expense_columns[1]:
         expense_month = _month_selectbox(
             "支出发生月份",
             month_options,
@@ -88,17 +116,28 @@ def render_calculation_page() -> None:
 
     current_assets_cents = get_investable_assets_cents(st.session_state)
     events = _build_events(
-        income_yuan=one_time_income_yuan,
-        income_month=income_month,
+        income_rows=one_time_income_rows,
         expense_yuan=one_time_expense_yuan,
         expense_month=expense_month,
     )
+    monthly_saving_by_month = {
+        month: yuan_to_cents(monthly_income_yuan)
+        - round(
+            get_annual_budget(year=month.year, state=st.session_state).total_cents / 12
+        )
+        if income_start_month <= month <= income_end_month
+        else -round(
+            get_annual_budget(year=month.year, state=st.session_state).total_cents / 12
+        )
+        for month in month_options
+    }
     points = forecast_assets(
         initial_assets_cents=current_assets_cents,
         as_of_month=as_of_month,
         end_month=end_month,
-        monthly_saving_cents=yuan_to_cents(monthly_saving_yuan),
+        monthly_saving_cents=0,
         events=events,
+        monthly_saving_by_month=monthly_saving_by_month,
     )
 
     st.subheader("2｜选择三个退出节点")
@@ -170,16 +209,18 @@ def render_calculation_page() -> None:
     st.subheader("3｜查看逐月资产增长")
     summary_columns = st.columns(4)
     summary_columns[0].metric("当前金融资产", format_wan(current_assets_cents))
-    summary_columns[1].metric("月净储蓄", format_cny(yuan_to_cents(monthly_saving_yuan)))
+    starting_saving_cents = monthly_saving_by_month[as_of_month]
+    summary_columns[1].metric("起点月度结余", format_cny(starting_saving_cents))
     summary_columns[2].metric("规划提款率", format_bps(round(withdrawal_rate * 100)))
     summary_columns[3].metric("预测期末资产", format_wan(points[-1].closing_assets_cents))
 
     st.code(
-        "月末资产 = 月初资产 + 月净储蓄 + 一次性收入 − 一次性支出",
+        "月末资产 = 月初资产 +（月收入 − 当年生活预算 ÷ 12）+ 一次性收入 − 一次性支出",
         language=None,
     )
     st.plotly_chart(
         build_fire_runway_chart(
+            initial_assets_cents=current_assets_cents,
             points=points,
             semi_fire_targets=semi_fire_targets,
             full_fire_targets=full_fire_targets,
@@ -189,7 +230,7 @@ def render_calculation_page() -> None:
         config={"displayModeBar": False},
     )
     st.caption(
-        "资产线只使用当前资产、月净储蓄和一次性事件，不假设投资收益；目标线由生活预算和半 FIRE 后收入反推。"
+        "当前资产单独标为起点；后续每个点是当月月末资产。月收入只在生效区间计入，且不假设投资收益。"
     )
 
     with st.expander("展开逐月计算明细"):
@@ -242,14 +283,14 @@ def _render_forecast_inputs() -> tuple[date, int, int, float]:
             )
         )
     with columns[2]:
-        monthly_saving_yuan = int(
+        monthly_income_yuan = int(
             st.number_input(
-                "当前月净储蓄（元）",
+                "当前月收入（元）",
                 min_value=0,
                 max_value=100_000_000,
-                value=30_000,
+                value=50_000,
                 step=1_000,
-                key="calculation_monthly_saving",
+                key="calculation_monthly_income",
             )
         )
     with columns[3]:
@@ -263,7 +304,7 @@ def _render_forecast_inputs() -> tuple[date, int, int, float]:
                 key="calculation_withdrawal_rate",
             )
         )
-    return as_of_date, horizon_months, monthly_saving_yuan, withdrawal_rate
+    return as_of_date, horizon_months, monthly_income_yuan, withdrawal_rate
 
 
 def _month_selectbox(
@@ -289,16 +330,15 @@ def _month_selectbox(
 
 def _build_events(
     *,
-    income_yuan: int,
-    income_month: YearMonth,
+    income_rows: Sequence[tuple[int, YearMonth]],
     expense_yuan: int,
     expense_month: YearMonth,
 ) -> list[AssetEvent]:
     events: list[AssetEvent] = []
-    if income_yuan:
+    for index, (income_yuan, income_month) in enumerate(income_rows):
         events.append(
             AssetEvent(
-                id="calculation-income",
+                id=f"calculation-income-{index}",
                 plan_id="current-plan",
                 event_month=income_month,
                 event_type=AssetEventType.OTHER_INCOME,
@@ -383,7 +423,7 @@ def _forecast_row(point: AssetPoint) -> dict[str, str]:
     return {
         "月份": str(point.month),
         "月初资产": format_cny(point.opening_assets_cents),
-        "+ 月净储蓄": format_cny(point.monthly_saving_cents),
+        "+ 月度结余（收入−预算）": format_cny(point.monthly_saving_cents),
         "+ 一次性收入": format_cny(point.one_time_income_cents),
         "− 一次性支出": format_cny(point.one_time_expense_cents),
         "= 月末资产": format_cny(point.closing_assets_cents),

@@ -62,6 +62,23 @@ def test_forecast_assets_accumulates_monthly_cash_flows() -> None:
     assert points[2].one_time_income_cents == 20_000_000
 
 
+def test_forecast_supports_monthly_saving_schedule() -> None:
+    points = forecast_assets(
+        initial_assets_cents=1_000_000,
+        as_of_month=YearMonth(2027, 1),
+        end_month=YearMonth(2027, 2),
+        monthly_saving_cents=0,
+        monthly_saving_by_month={
+            YearMonth(2027, 1): 200_000,
+            YearMonth(2027, 2): -100_000,
+        },
+        events=[],
+    )
+
+    assert [point.monthly_saving_cents for point in points] == [200_000, -100_000]
+    assert [point.closing_assets_cents for point in points] == [1_200_000, 1_100_000]
+
+
 def test_forecast_includes_events_in_exit_month() -> None:
     points = forecast_assets(
         initial_assets_cents=100_000,

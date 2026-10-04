@@ -20,6 +20,7 @@ STATUS_COLORS = {
 
 def build_fire_runway_chart(
     *,
+    initial_assets_cents: int,
     points: Sequence[AssetPoint],
     semi_fire_targets: Sequence[int],
     full_fire_targets: Sequence[int],
@@ -29,13 +30,14 @@ def build_fire_runway_chart(
     if len(points) != len(semi_fire_targets) or len(points) != len(full_fire_targets):
         raise ValueError("chart target series must align with forecast points")
 
-    months = [str(point.month) for point in points]
+    months = ["当前资产"] + [str(point.month) for point in points]
     figure = go.Figure()
     figure.add_trace(
         go.Scatter(
             x=months,
-            y=[_to_wan(point.closing_assets_cents) for point in points],
-            mode="lines",
+            y=[_to_wan(initial_assets_cents)]
+            + [_to_wan(point.closing_assets_cents) for point in points],
+            mode="lines+markers",
             name="月末金融资产",
             line={"color": "#ff6b35", "width": 3},
             hovertemplate="%{x}<br>金融资产 %{y:,.2f} 万<extra></extra>",
@@ -44,7 +46,9 @@ def build_fire_runway_chart(
     figure.add_trace(
         go.Scatter(
             x=months,
-            y=[_to_wan(value) for value in semi_fire_targets],
+            y=[_to_wan(semi_fire_targets[0])] + [
+                _to_wan(value) for value in semi_fire_targets
+            ],
             mode="lines",
             name="半 FIRE 目标线",
             line={"color": "#2b6cb0", "width": 2, "dash": "dash"},
@@ -54,7 +58,9 @@ def build_fire_runway_chart(
     figure.add_trace(
         go.Scatter(
             x=months,
-            y=[_to_wan(value) for value in full_fire_targets],
+            y=[_to_wan(full_fire_targets[0])] + [
+                _to_wan(value) for value in full_fire_targets
+            ],
             mode="lines",
             name="完全 FIRE 参考线",
             line={"color": "#718096", "width": 2, "dash": "dot"},
