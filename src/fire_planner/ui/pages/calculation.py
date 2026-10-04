@@ -21,7 +21,12 @@ from fire_planner.domain.scenario import evaluate_scenario, required_assets_for_
 from fire_planner.ui.charts import build_fire_runway_chart
 from fire_planner.ui.formatters import format_bps, format_cny, format_wan
 from fire_planner.ui.pages.assets import get_investable_assets_cents
-from fire_planner.ui.pages.living import get_annual_budget
+from fire_planner.ui.pages.living import (
+    BUDGET_FIELDS,
+    budget_widget_key,
+    default_budget_year,
+    get_annual_budget,
+)
 
 
 STATUS_LABELS = {
@@ -130,11 +135,19 @@ def render_calculation_page() -> None:
     monthly_saving_by_month = {
         month: yuan_to_cents(monthly_income_yuan)
         - round(
-            get_annual_budget(year=month.year, state=st.session_state).total_cents / 12
+            _annual_budget_for_forecast_year(
+                year=month.year,
+                state=st.session_state,
+            ).total_cents
+            / 12
         )
         if income_start_month <= month <= income_end_month
         else -round(
-            get_annual_budget(year=month.year, state=st.session_state).total_cents / 12
+            _annual_budget_for_forecast_year(
+                year=month.year,
+                state=st.session_state,
+            ).total_cents
+            / 12
         )
         for month in month_options
     }
@@ -190,7 +203,7 @@ def render_calculation_page() -> None:
 
     semi_fire_targets = [
         required_assets_for_budget(
-            annual_budget_cents=get_annual_budget(
+            annual_budget_cents=_annual_budget_for_forecast_year(
                 year=point.month.year,
                 state=st.session_state,
             ).total_cents,
@@ -203,7 +216,7 @@ def render_calculation_page() -> None:
     ]
     full_fire_targets = [
         required_assets_for_budget(
-            annual_budget_cents=get_annual_budget(
+            annual_budget_cents=_annual_budget_for_forecast_year(
                 year=point.month.year,
                 state=st.session_state,
             ).total_cents,
@@ -238,6 +251,9 @@ def render_calculation_page() -> None:
     )
     st.caption(
         "当前资产单独标为起点；后续每个点是当月月末资产。月收入只在生效区间计入，且不假设投资收益。"
+    )
+    st.caption(
+        f"未单独填写的年份沿用 {int(st.session_state.get('budget_year', default_budget_year()))} 年生活预算。"
     )
 
     with st.expander("展开逐月计算明细"):
@@ -318,6 +334,19 @@ def _add_income_row() -> None:
     st.session_state["calculation_income_row_count"] = (
         int(st.session_state.get("calculation_income_row_count", 1)) + 1
     )
+
+
+def _annual_budget_for_forecast_year(
+    *,
+    year: int,
+    state: MutableMapping[str, Any],
+):
+    planning_year = int(state.get("budget_year", default_budget_year()))
+    has_explicit_budget = any(
+        budget_widget_key(year, field.key) in state for field in BUDGET_FIELDS
+    )
+    budget_year = year if year == planning_year or has_explicit_budget else planning_year
+    return get_annual_budget(year=budget_year, state=state)
 
 
 def _month_selectbox(
@@ -409,7 +438,7 @@ def _evaluate_scenarios(
         evaluate_scenario(
             scenario=scenario,
             exit_assets_cents=points_by_month[scenario.exit_month].closing_assets_cents,
-            annual_budget_cents=get_annual_budget(
+            annual_budget_cents=_annual_budget_for_forecast_year(
                 year=scenario.exit_month.year,
                 state=state,
             ).total_cents,
@@ -421,7 +450,7 @@ def _evaluate_scenarios(
         evaluate_scenario(
             scenario=scenario,
             exit_assets_cents=points_by_month[scenario.exit_month].closing_assets_cents,
-            annual_budget_cents=get_annual_budget(
+            annual_budget_cents=_annual_budget_for_forecast_year(
                 year=scenario.exit_month.year,
                 state=state,
             ).total_cents,
