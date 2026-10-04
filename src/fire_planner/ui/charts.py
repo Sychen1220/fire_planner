@@ -22,21 +22,14 @@ def build_fire_runway_chart(
     *,
     initial_assets_cents: int,
     scenario_points: Mapping[str, Sequence[AssetPoint]],
-    semi_fire_targets: Mapping[str, Sequence[int]],
-    full_fire_targets: Mapping[str, Sequence[int]],
+    semi_fire_targets: Sequence[int],
+    full_fire_targets: Sequence[int],
     scenario_results: Sequence[ScenarioResult],
 ) -> go.Figure:
     """Build the FIRE runway from values already produced by the domain engine."""
     figure = go.Figure()
     colors = ["#ff6b35", "#2b6cb0", "#805ad5", "#319795", "#d69e2e"]
     for scenario_id, points in scenario_points.items():
-        if (
-            scenario_id not in semi_fire_targets
-            or scenario_id not in full_fire_targets
-            or len(points) != len(semi_fire_targets[scenario_id])
-            or len(points) != len(full_fire_targets[scenario_id])
-        ):
-            raise ValueError("chart target series must align with forecast points")
         label = f"节点 {int(scenario_id) + 1}"
         months = ["当前资产"] + [str(point.month) for point in points]
         color = colors[int(scenario_id) % len(colors)]
@@ -53,28 +46,35 @@ def build_fire_runway_chart(
                 + "资产 %{y:,.2f} 万<extra></extra>",
             )
         )
-        figure.add_trace(
-            go.Scatter(
-                x=months,
-                y=[_to_wan(semi_fire_targets[scenario_id][0])]
-                + [_to_wan(value) for value in semi_fire_targets[scenario_id]],
-                mode="lines",
-                name=f"{label} 半 FIRE目标",
-                line={"color": color, "width": 2, "dash": "dash"},
-                hovertemplate="%{x}<br>半 FIRE目标 %{y:,.2f} 万<extra></extra>",
-            )
+
+    reference_points = max(scenario_points.values(), key=len)
+    if len(reference_points) != len(semi_fire_targets) or len(reference_points) != len(
+        full_fire_targets
+    ):
+        raise ValueError("shared target series must align with the reference timeline")
+    reference_months = ["当前资产"] + [str(point.month) for point in reference_points]
+    figure.add_trace(
+        go.Scatter(
+            x=reference_months,
+            y=[_to_wan(semi_fire_targets[0])]
+            + [_to_wan(value) for value in semi_fire_targets],
+            mode="lines",
+            name="半 FIRE目标",
+            line={"color": "#2b6cb0", "width": 2, "dash": "dash"},
+            hovertemplate="%{x}<br>半 FIRE目标 %{y:,.2f} 万<extra></extra>",
         )
-        figure.add_trace(
-            go.Scatter(
-                x=months,
-                y=[_to_wan(full_fire_targets[scenario_id][0])]
-                + [_to_wan(value) for value in full_fire_targets[scenario_id]],
-                mode="lines",
-                name=f"{label} 完全 FIRE参考",
-                line={"color": color, "width": 1, "dash": "dot"},
-                hovertemplate="%{x}<br>完全 FIRE参考 %{y:,.2f} 万<extra></extra>",
-            )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=reference_months,
+            y=[_to_wan(full_fire_targets[0])]
+            + [_to_wan(value) for value in full_fire_targets],
+            mode="lines",
+            name="完全 FIRE参考",
+            line={"color": "#718096", "width": 2, "dash": "dot"},
+            hovertemplate="%{x}<br>完全 FIRE参考 %{y:,.2f} 万<extra></extra>",
         )
+    )
 
     if scenario_results:
         figure.add_trace(

@@ -45,7 +45,6 @@ class ScenarioInput:
     label: str
     exit_month: YearMonth
     monthly_income_yuan: int
-    post_fire_monthly_income_yuan: int
     one_time_income_rows: tuple[tuple[int, YearMonth], ...]
 
 
@@ -54,7 +53,13 @@ def render_calculation_page() -> None:
     st.caption("从当前资产逐月推演到退出节点，并展示每一步公式，不隐藏计算过程。")
 
     st.subheader("1｜设置测算假设")
-    as_of_date, horizon_months, withdrawal_rate, annual_return_rate = (
+    (
+        as_of_date,
+        horizon_months,
+        withdrawal_rate,
+        annual_return_rate,
+        post_fire_monthly_income_yuan,
+    ) = (
         _render_forecast_inputs()
     )
     as_of_month = YearMonth.from_date(as_of_date)
@@ -72,7 +77,10 @@ def render_calculation_page() -> None:
         st.error("每个退出方案需要选择不同月份。")
         return
 
-    scenarios = _build_scenarios(scenario_inputs)
+    scenarios = _build_scenarios(
+        scenario_inputs,
+        post_fire_monthly_income_yuan=post_fire_monthly_income_yuan,
+    )
     points_by_scenario = {
         item.scenario_id: _forecast_scenario(
             scenario_input=item,
@@ -90,26 +98,19 @@ def render_calculation_page() -> None:
         state=st.session_state,
     )
 
-    semi_fire_targets_by_scenario = {
-        item.scenario_id: _target_assets_for_points(
-            points=points_by_scenario[item.scenario_id],
-            annual_active_income_cents=yuan_to_cents(
-                item.post_fire_monthly_income_yuan * 12
-            ),
-            withdrawal_rate_bps=round(withdrawal_rate * 100),
-            state=st.session_state,
-        )
-        for item in scenario_inputs
-    }
-    full_fire_targets_by_scenario = {
-        item.scenario_id: _target_assets_for_points(
-            points=points_by_scenario[item.scenario_id],
-            annual_active_income_cents=0,
-            withdrawal_rate_bps=round(withdrawal_rate * 100),
-            state=st.session_state,
-        )
-        for item in scenario_inputs
-    }
+    reference_points = max(points_by_scenario.values(), key=len)
+    semi_fire_targets = _target_assets_for_points(
+        points=reference_points,
+        annual_active_income_cents=yuan_to_cents(post_fire_monthly_income_yuan * 12),
+        withdrawal_rate_bps=round(withdrawal_rate * 100),
+        state=st.session_state,
+    )
+    full_fire_targets = _target_assets_for_points(
+        points=reference_points,
+        annual_active_income_cents=0,
+        withdrawal_rate_bps=round(withdrawal_rate * 100),
+        state=st.session_state,
+    )
 
     st.subheader("3｜查看逐月资产增长")
     summary_columns = st.columns(4)
@@ -130,8 +131,8 @@ def render_calculation_page() -> None:
         build_fire_runway_chart(
             initial_assets_cents=current_assets_cents,
             scenario_points=points_by_scenario,
-            semi_fire_targets=semi_fire_targets_by_scenario,
-            full_fire_targets=full_fire_targets_by_scenario,
+            semi_fire_targets=semi_fire_targets,
+            full_fire_targets=full_fire_targets,
             scenario_results=results,
         ),
         width="stretch",
@@ -189,8 +190,8 @@ def render_calculation_page() -> None:
         )
 
 
-def _render_forecast_inputs() -> tuple[date, int, float, float]:
-    columns = st.columns(4)
+def _render_forecast_inputs() -> tuple[date, int, float, float, int]:
+    columns = st.columns(5)
     with columns[0]:
         as_of_date = st.date_input(
             "测算起点",
@@ -231,11 +232,23 @@ def _render_forecast_inputs() -> tuple[date, int, float, float]:
                 help="按月计入资产预测；负资产不产生投资回报。",
             )
         )
+    with columns[4]:
+        post_fire_monthly_income_yuan = int(
+            st.number_input(
+                "半 FIRE 后月收入（元）",
+                min_value=0,
+                max_value=10_000_000,
+                value=5_000,
+                step=500,
+                key="calculation_post_fire_income",
+            )
+        )
     return (
         as_of_date,
         horizon_months,
         withdrawal_rate,
         annual_return_rate,
+        post_fire_monthly_income_yuan,
     )
 
 
@@ -273,18 +286,6 @@ def _render_scenario_inputs(
                         key=f"calculation_{scenario_id}_monthly_income",
                     )
                 )
-            with income_columns[1]:
-                post_fire_monthly_income_yuan = int(
-                    st.number_input(
-                        f"{label} 退出后月收入（元）",
-                        min_value=0,
-                        max_value=10_000_000,
-                        value=5_000,
-                        step=500,
-                        key=f"calculation_{scenario_id}_post_fire_income",
-                    )
-                )
-
             st.caption("退出前一次性收入（可添加多条）")
             row_count_key = f"calculation_{scenario_id}_income_row_count"
             row_count = int(st.session_state.get(row_count_key, 1))
@@ -327,7 +328,6 @@ def _render_scenario_inputs(
                     label=label,
                     exit_month=exit_month,
                     monthly_income_yuan=monthly_income_yuan,
-                    post_fire_monthly_income_yuan=post_fire_monthly_income_yuan,
                     one_time_income_rows=tuple(one_time_income_rows),
                 )
             )
@@ -421,6 +421,8 @@ def _build_events(
 
 def _build_scenarios(
     scenario_inputs: Sequence[ScenarioInput],
+    *,
+    post_fire_monthly_income_yuan: int,
 ) -> list[Scenario]:
     return [
         Scenario(
@@ -429,7 +431,7 @@ def _build_scenarios(
             name=item.label,
             exit_month=item.exit_month,
             post_fire_monthly_income_cents=yuan_to_cents(
-                item.post_fire_monthly_income_yuan
+                post_fire_monthly_income_yuan
             ),
         )
         for item in scenario_inputs
