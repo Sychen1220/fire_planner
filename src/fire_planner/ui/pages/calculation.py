@@ -86,6 +86,8 @@ def render_calculation_page() -> None:
             scenario_input=item,
             initial_assets_cents=current_assets_cents,
             as_of_month=as_of_month,
+            end_month=as_of_month.add_months(horizon_months),
+            post_fire_monthly_income_yuan=post_fire_monthly_income_yuan,
             state=st.session_state,
             annual_return_bps=round(annual_return_rate * 100),
         )
@@ -121,7 +123,12 @@ def render_calculation_page() -> None:
     first_scenario = scenario_inputs[0]
     summary_columns[3].metric(
         f"{first_scenario.label} 退出资产",
-        format_wan(points_by_scenario[first_scenario.scenario_id][-1].closing_assets_cents),
+        format_wan(
+            _scenario_exit_point(
+                scenarios[0],
+                points_by_scenario,
+            ).closing_assets_cents
+        ),
     )
 
     st.code(
@@ -140,7 +147,7 @@ def render_calculation_page() -> None:
         config={"displayModeBar": False},
     )
     st.caption(
-        f"当前资产单独标为起点；每条曲线使用对应方案的退出前收入。资产预期回报按月计入，年化 {annual_return_rate:.2f}%。"
+        f"当前资产单独标为起点；每条曲线延伸到预测期末，退出前使用方案月薪，退出后使用半 FIRE 后月收入。资产预期回报按月计入，年化 {annual_return_rate:.2f}%。"
     )
     st.caption(
         f"未单独填写的年份沿用 {int(st.session_state.get('budget_year', default_budget_year()))} 年生活预算。"
@@ -447,24 +454,30 @@ def _forecast_scenario(
     scenario_input: ScenarioInput,
     initial_assets_cents: int,
     as_of_month: YearMonth,
+    end_month: YearMonth,
+    post_fire_monthly_income_yuan: int,
     state: MutableMapping[str, Any],
     annual_return_bps: int,
 ) -> list[AssetPoint]:
     months = [
         as_of_month.add_months(offset)
         for offset in range(
-            as_of_month.months_until(scenario_input.exit_month) + 1
+            as_of_month.months_until(end_month) + 1
         )
     ]
     monthly_saving_by_month = {
-        month: yuan_to_cents(scenario_input.monthly_income_yuan)
+        month: yuan_to_cents(
+            scenario_input.monthly_income_yuan
+            if month <= scenario_input.exit_month
+            else post_fire_monthly_income_yuan
+        )
         - _monthly_budget_cents(year=month.year, state=state)
         for month in months
     }
     return forecast_assets(
         initial_assets_cents=initial_assets_cents,
         as_of_month=as_of_month,
-        end_month=scenario_input.exit_month,
+        end_month=end_month,
         monthly_saving_cents=0,
         events=_build_events(income_rows=scenario_input.one_time_income_rows),
         monthly_saving_by_month=monthly_saving_by_month,
@@ -552,9 +565,10 @@ def _scenario_exit_point(
     points = points_by_scenario.get(scenario.id.removeprefix("scenario-"))
     if not points:
         raise ValueError(f"missing forecast points for {scenario.id}")
-    if points[-1].month != scenario.exit_month:
-        raise ValueError(f"forecast does not end at {scenario.exit_month}")
-    return points[-1]
+    exit_points = [point for point in points if point.month == scenario.exit_month]
+    if len(exit_points) != 1:
+        raise ValueError(f"forecast does not include {scenario.exit_month}")
+    return exit_points[0]
 
 
 def _forecast_row(point: AssetPoint) -> dict[str, str]:
