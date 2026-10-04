@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Mapping, Sequence
 
 import plotly.graph_objects as go
 
@@ -21,52 +21,60 @@ STATUS_COLORS = {
 def build_fire_runway_chart(
     *,
     initial_assets_cents: int,
-    points: Sequence[AssetPoint],
-    semi_fire_targets: Sequence[int],
-    full_fire_targets: Sequence[int],
+    scenario_points: Mapping[str, Sequence[AssetPoint]],
+    semi_fire_targets: Mapping[str, Sequence[int]],
+    full_fire_targets: Mapping[str, Sequence[int]],
     scenario_results: Sequence[ScenarioResult],
 ) -> go.Figure:
     """Build the FIRE runway from values already produced by the domain engine."""
-    if len(points) != len(semi_fire_targets) or len(points) != len(full_fire_targets):
-        raise ValueError("chart target series must align with forecast points")
-
-    months = ["当前资产"] + [str(point.month) for point in points]
     figure = go.Figure()
-    figure.add_trace(
-        go.Scatter(
-            x=months,
-            y=[_to_wan(initial_assets_cents)]
-            + [_to_wan(point.closing_assets_cents) for point in points],
-            mode="lines+markers",
-            name="月末金融资产",
-            line={"color": "#ff6b35", "width": 3},
-            hovertemplate="%{x}<br>金融资产 %{y:,.2f} 万<extra></extra>",
+    colors = {"a": "#ff6b35", "b": "#2b6cb0", "c": "#805ad5"}
+    for scenario_id, points in scenario_points.items():
+        if (
+            scenario_id not in semi_fire_targets
+            or scenario_id not in full_fire_targets
+            or len(points) != len(semi_fire_targets[scenario_id])
+            or len(points) != len(full_fire_targets[scenario_id])
+        ):
+            raise ValueError("chart target series must align with forecast points")
+        label = scenario_id.upper()
+        months = ["当前资产"] + [str(point.month) for point in points]
+        color = colors.get(scenario_id, "#ff6b35")
+        figure.add_trace(
+            go.Scatter(
+                x=months,
+                y=[_to_wan(initial_assets_cents)]
+                + [_to_wan(point.closing_assets_cents) for point in points],
+                mode="lines+markers",
+                name=f"节点 {label} 资产",
+                line={"color": color, "width": 3},
+                hovertemplate="%{x}<br>节点 "
+                + label
+                + "资产 %{y:,.2f} 万<extra></extra>",
+            )
         )
-    )
-    figure.add_trace(
-        go.Scatter(
-            x=months,
-            y=[_to_wan(semi_fire_targets[0])] + [
-                _to_wan(value) for value in semi_fire_targets
-            ],
-            mode="lines",
-            name="半 FIRE 目标线",
-            line={"color": "#2b6cb0", "width": 2, "dash": "dash"},
-            hovertemplate="%{x}<br>目标资产 %{y:,.2f} 万<extra></extra>",
+        figure.add_trace(
+            go.Scatter(
+                x=months,
+                y=[_to_wan(semi_fire_targets[scenario_id][0])]
+                + [_to_wan(value) for value in semi_fire_targets[scenario_id]],
+                mode="lines",
+                name=f"节点 {label} 半 FIRE目标",
+                line={"color": color, "width": 2, "dash": "dash"},
+                hovertemplate="%{x}<br>半 FIRE目标 %{y:,.2f} 万<extra></extra>",
+            )
         )
-    )
-    figure.add_trace(
-        go.Scatter(
-            x=months,
-            y=[_to_wan(full_fire_targets[0])] + [
-                _to_wan(value) for value in full_fire_targets
-            ],
-            mode="lines",
-            name="完全 FIRE 参考线",
-            line={"color": "#718096", "width": 2, "dash": "dot"},
-            hovertemplate="%{x}<br>参考资产 %{y:,.2f} 万<extra></extra>",
+        figure.add_trace(
+            go.Scatter(
+                x=months,
+                y=[_to_wan(full_fire_targets[scenario_id][0])]
+                + [_to_wan(value) for value in full_fire_targets[scenario_id]],
+                mode="lines",
+                name=f"节点 {label} 完全 FIRE参考",
+                line={"color": color, "width": 1, "dash": "dot"},
+                hovertemplate="%{x}<br>完全 FIRE参考 %{y:,.2f} 万<extra></extra>",
+            )
         )
-    )
 
     if scenario_results:
         figure.add_trace(

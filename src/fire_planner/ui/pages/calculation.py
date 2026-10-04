@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, MutableMapping, Sequence
+from typing import Any, Mapping, MutableMapping, Sequence
 
 import streamlit as st
 
@@ -38,189 +39,105 @@ STATUS_LABELS = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class ScenarioInput:
+    scenario_id: str
+    label: str
+    exit_month: YearMonth
+    monthly_income_yuan: int
+    post_fire_monthly_income_yuan: int
+    one_time_income_rows: tuple[tuple[int, YearMonth], ...]
+
+
 def render_calculation_page() -> None:
     st.title("开始测算")
     st.caption("从当前资产逐月推演到退出节点，并展示每一步公式，不隐藏计算过程。")
 
     st.subheader("1｜设置测算假设")
-    (
-        as_of_date,
-        horizon_months,
-        monthly_income_yuan,
-        withdrawal_rate,
-        annual_return_rate,
-    ) = (
+    as_of_date, horizon_months, withdrawal_rate, annual_return_rate = (
         _render_forecast_inputs()
     )
     as_of_month = YearMonth.from_date(as_of_date)
-    end_month = as_of_month.add_months(horizon_months)
     month_options = [
         as_of_month.add_months(offset) for offset in range(horizon_months + 1)
     ]
 
-    st.markdown("**月收入生效区间**")
-    income_period_columns = st.columns(2)
-    with income_period_columns[0]:
-        income_start_month = _month_selectbox(
-            "月收入开始月份",
-            month_options,
-            default_offset=0,
-            key="calculation_income_start_month",
-        )
-    with income_period_columns[1]:
-        income_end_month = _month_selectbox(
-            "月收入结束月份",
-            month_options,
-            default_offset=horizon_months,
-            key="calculation_income_end_month",
-        )
-    if income_end_month < income_start_month:
-        st.error("月收入结束月份不能早于开始月份。")
-        return
-
-    st.markdown("**一次性收入（可添加多条）**")
-    one_time_income_rows: list[tuple[int, YearMonth]] = []
-    income_row_count = int(st.session_state.get("calculation_income_row_count", 1))
-    for index in range(income_row_count):
-        income_columns = st.columns(2)
-        with income_columns[0]:
-            amount_yuan = int(
-                st.number_input(
-                    f"一次性收入 {index + 1}（元）",
-                    min_value=0,
-                    max_value=1_000_000_000,
-                    value=0,
-                    step=10_000,
-                    key=f"calculation_one_time_income_{index}",
-                )
-            )
-        with income_columns[1]:
-            event_month = _month_selectbox(
-                f"收入 {index + 1} 发生月份",
-                month_options,
-                default_offset=min((index + 1) * 3, horizon_months),
-                key=f"calculation_income_month_{index}",
-                disabled=amount_yuan == 0,
-            )
-        if amount_yuan:
-            one_time_income_rows.append((amount_yuan, event_month))
-
-    st.button(
-        "＋ 添加一次性收入",
-        key="add_calculation_income_row",
-        on_click=_add_income_row,
-    )
-
     current_assets_cents = get_investable_assets_cents(st.session_state)
-    events = _build_events(income_rows=one_time_income_rows)
-    monthly_saving_by_month = {
-        month: yuan_to_cents(monthly_income_yuan)
-        - _monthly_budget_cents(year=month.year, state=st.session_state)
-        if income_start_month <= month <= income_end_month
-        else -_monthly_budget_cents(year=month.year, state=st.session_state)
-        for month in month_options
-    }
-    points = forecast_assets(
-        initial_assets_cents=current_assets_cents,
-        as_of_month=as_of_month,
-        end_month=end_month,
-        monthly_saving_cents=0,
-        events=events,
-        monthly_saving_by_month=monthly_saving_by_month,
-        annual_return_bps=round(annual_return_rate * 100),
+    st.subheader("2｜分别录入三个退出方案")
+    scenario_inputs = _render_scenario_inputs(
+        month_options=month_options,
+        horizon_months=horizon_months,
     )
-
-    st.subheader("2｜选择三个退出节点")
-    post_fire_monthly_income_yuan = int(
-        st.number_input(
-            "半 FIRE 后目标月收入（元）",
-            min_value=0,
-            max_value=10_000_000,
-            value=5_000,
-            step=500,
-            key="calculation_post_fire_income",
-        )
-    )
-    exit_columns = st.columns(3)
-    exit_months: list[YearMonth] = []
-    for index, (column, default_offset) in enumerate(
-        zip(exit_columns, (6, 10, 18), strict=True)
-    ):
-        with column:
-            exit_months.append(
-                _month_selectbox(
-                    f"节点 {chr(65 + index)}",
-                    month_options,
-                    default_offset=min(default_offset, horizon_months),
-                    key=f"calculation_exit_month_{index}",
-                )
-            )
-
-    if len(set(exit_months)) != len(exit_months):
+    if len({item.exit_month for item in scenario_inputs}) != len(scenario_inputs):
         st.error("三个退出节点需要选择不同月份。")
         return
 
-    scenarios = _build_scenarios(
-        exit_months=exit_months,
-        post_fire_monthly_income_yuan=post_fire_monthly_income_yuan,
-    )
+    scenarios = _build_scenarios(scenario_inputs)
+    points_by_scenario = {
+        item.scenario_id: _forecast_scenario(
+            scenario_input=item,
+            initial_assets_cents=current_assets_cents,
+            as_of_month=as_of_month,
+            state=st.session_state,
+            annual_return_bps=round(annual_return_rate * 100),
+        )
+        for item in scenario_inputs
+    }
     results = _evaluate_scenarios(
         scenarios=scenarios,
-        points=points,
+        points_by_scenario=points_by_scenario,
         withdrawal_rate_bps=round(withdrawal_rate * 100),
         state=st.session_state,
     )
 
-    semi_fire_targets = [
-        required_assets_for_budget(
-            annual_budget_cents=_annual_budget_for_forecast_year(
-                year=point.month.year,
-                state=st.session_state,
-            ).total_cents,
+    semi_fire_targets_by_scenario = {
+        item.scenario_id: _target_assets_for_points(
+            points=points_by_scenario[item.scenario_id],
             annual_active_income_cents=yuan_to_cents(
-                post_fire_monthly_income_yuan * 12
+                item.post_fire_monthly_income_yuan * 12
             ),
             withdrawal_rate_bps=round(withdrawal_rate * 100),
+            state=st.session_state,
         )
-        for point in points
-    ]
-    full_fire_targets = [
-        required_assets_for_budget(
-            annual_budget_cents=_annual_budget_for_forecast_year(
-                year=point.month.year,
-                state=st.session_state,
-            ).total_cents,
+        for item in scenario_inputs
+    }
+    full_fire_targets_by_scenario = {
+        item.scenario_id: _target_assets_for_points(
+            points=points_by_scenario[item.scenario_id],
             annual_active_income_cents=0,
             withdrawal_rate_bps=round(withdrawal_rate * 100),
+            state=st.session_state,
         )
-        for point in points
-    ]
+        for item in scenario_inputs
+    }
 
     st.subheader("3｜查看逐月资产增长")
     summary_columns = st.columns(4)
     summary_columns[0].metric("当前金融资产", format_wan(current_assets_cents))
-    starting_saving_cents = monthly_saving_by_month[as_of_month]
-    summary_columns[1].metric("起点月度结余", format_cny(starting_saving_cents))
+    summary_columns[1].metric("预期年化收益率", f"{annual_return_rate:.2f}%")
     summary_columns[2].metric("规划提款率", format_bps(round(withdrawal_rate * 100)))
-    summary_columns[3].metric("预测期末资产", format_wan(points[-1].closing_assets_cents))
+    summary_columns[3].metric(
+        "节点 A 退出资产",
+        format_wan(points_by_scenario["a"][-1].closing_assets_cents),
+    )
 
     st.code(
-        "月末资产 = 月初资产 +（月薪 − 当年生活预算 ÷ 12）+ 一次性收入 + 资产预期回报",
+        "月末资产 = 月初资产 +（方案月薪 − 当年生活预算 ÷ 12）+ 一次性收入 + 资产预期回报",
         language=None,
     )
     st.plotly_chart(
         build_fire_runway_chart(
             initial_assets_cents=current_assets_cents,
-            points=points,
-            semi_fire_targets=semi_fire_targets,
-            full_fire_targets=full_fire_targets,
+            scenario_points=points_by_scenario,
+            semi_fire_targets=semi_fire_targets_by_scenario,
+            full_fire_targets=full_fire_targets_by_scenario,
             scenario_results=results,
         ),
         width="stretch",
         config={"displayModeBar": False},
     )
     st.caption(
-        f"当前资产单独标为起点；后续每个点是当月月末资产。资产预期回报按月计入，年化 {annual_return_rate:.2f}%。"
+        f"当前资产单独标为起点；每条曲线使用对应方案的退出前收入。资产预期回报按月计入，年化 {annual_return_rate:.2f}%。"
     )
     st.caption(
         f"未单独填写的年份沿用 {int(st.session_state.get('budget_year', default_budget_year()))} 年生活预算。"
@@ -228,7 +145,14 @@ def render_calculation_page() -> None:
 
     with st.expander("展开逐月计算明细"):
         st.dataframe(
-            [_forecast_row(point) for point in points],
+            [
+                {
+                    "方案": scenario.label,
+                    **_forecast_row(point),
+                }
+                for scenario in scenario_inputs
+                for point in points_by_scenario[scenario.scenario_id]
+            ],
             hide_index=True,
             width="stretch",
         )
@@ -256,8 +180,8 @@ def render_calculation_page() -> None:
         _render_formula_breakdown(chr(65 + index), result, withdrawal_rate)
 
 
-def _render_forecast_inputs() -> tuple[date, int, int, float, float]:
-    columns = st.columns(5)
+def _render_forecast_inputs() -> tuple[date, int, float, float]:
+    columns = st.columns(4)
     with columns[0]:
         as_of_date = st.date_input(
             "测算起点",
@@ -276,17 +200,6 @@ def _render_forecast_inputs() -> tuple[date, int, int, float, float]:
             )
         )
     with columns[2]:
-        monthly_income_yuan = int(
-            st.number_input(
-                "当前月收入（元）",
-                min_value=0,
-                max_value=100_000_000,
-                value=50_000,
-                step=1_000,
-                key="calculation_monthly_income",
-            )
-        )
-    with columns[3]:
         withdrawal_rate = float(
             st.number_input(
                 "规划提款率（%）",
@@ -297,7 +210,7 @@ def _render_forecast_inputs() -> tuple[date, int, int, float, float]:
                 key="calculation_withdrawal_rate",
             )
         )
-    with columns[4]:
+    with columns[3]:
         annual_return_rate = float(
             st.number_input(
                 "预期年化收益率（%）",
@@ -312,16 +225,106 @@ def _render_forecast_inputs() -> tuple[date, int, int, float, float]:
     return (
         as_of_date,
         horizon_months,
-        monthly_income_yuan,
         withdrawal_rate,
         annual_return_rate,
     )
 
 
-def _add_income_row() -> None:
-    st.session_state["calculation_income_row_count"] = (
-        int(st.session_state.get("calculation_income_row_count", 1)) + 1
-    )
+def _render_scenario_inputs(
+    *,
+    month_options: Sequence[YearMonth],
+    horizon_months: int,
+) -> list[ScenarioInput]:
+    inputs: list[ScenarioInput] = []
+    for index, default_offset in enumerate((6, 10, 18)):
+        scenario_id = chr(97 + index)
+        label = f"节点 {chr(65 + index)}"
+        with st.container(border=True):
+            st.markdown(f"**{label}｜退出前收入与退出时间**")
+            exit_month = _month_selectbox(
+                f"{label} 退出月份",
+                month_options,
+                default_offset=min(default_offset, horizon_months),
+                key=f"calculation_{scenario_id}_exit_month",
+            )
+            scenario_month_options = [
+                month for month in month_options if month <= exit_month
+            ]
+            income_columns = st.columns(2)
+            with income_columns[0]:
+                monthly_income_yuan = int(
+                    st.number_input(
+                        f"{label} 退出前月薪（元）",
+                        min_value=0,
+                        max_value=100_000_000,
+                        value=50_000,
+                        step=1_000,
+                        key=f"calculation_{scenario_id}_monthly_income",
+                    )
+                )
+            with income_columns[1]:
+                post_fire_monthly_income_yuan = int(
+                    st.number_input(
+                        f"{label} 退出后月收入（元）",
+                        min_value=0,
+                        max_value=10_000_000,
+                        value=5_000,
+                        step=500,
+                        key=f"calculation_{scenario_id}_post_fire_income",
+                    )
+                )
+
+            st.caption("退出前一次性收入（可添加多条）")
+            row_count_key = f"calculation_{scenario_id}_income_row_count"
+            row_count = int(st.session_state.get(row_count_key, 1))
+            one_time_income_rows: list[tuple[int, YearMonth]] = []
+            for row_index in range(row_count):
+                row_columns = st.columns(2)
+                with row_columns[0]:
+                    amount_yuan = int(
+                        st.number_input(
+                            f"{label} 一次性收入 {row_index + 1}（元）",
+                            min_value=0,
+                            max_value=1_000_000_000,
+                            value=0,
+                            step=10_000,
+                            key=f"calculation_{scenario_id}_one_time_income_{row_index}",
+                        )
+                    )
+                with row_columns[1]:
+                    event_month = _month_selectbox(
+                        f"{label} 收入 {row_index + 1} 发生月份",
+                        scenario_month_options,
+                        default_offset=min(
+                            (row_index + 1) * 3,
+                            len(scenario_month_options) - 1,
+                        ),
+                        key=f"calculation_{scenario_id}_income_month_{row_index}",
+                        disabled=amount_yuan == 0,
+                    )
+                if amount_yuan:
+                    one_time_income_rows.append((amount_yuan, event_month))
+            st.button(
+                f"＋ {label} 添加一次性收入",
+                key=f"add_calculation_{scenario_id}_income_row",
+                on_click=_add_scenario_income_row,
+                args=(row_count_key,),
+            )
+        inputs.append(
+            ScenarioInput(
+                scenario_id=scenario_id,
+                label=label,
+                exit_month=exit_month,
+                monthly_income_yuan=monthly_income_yuan,
+                post_fire_monthly_income_yuan=post_fire_monthly_income_yuan,
+                one_time_income_rows=tuple(one_time_income_rows),
+            )
+        )
+    return inputs
+
+
+def _add_scenario_income_row(row_count_key: str) -> None:
+    st.session_state[row_count_key] = int(st.session_state.get(row_count_key, 1)) + 1
 
 
 def _annual_budget_for_forecast_year(
@@ -386,43 +389,96 @@ def _build_events(
 
 
 def _build_scenarios(
-    *,
-    exit_months: Sequence[YearMonth],
-    post_fire_monthly_income_yuan: int,
+    scenario_inputs: Sequence[ScenarioInput],
 ) -> list[Scenario]:
     return [
         Scenario(
-            id=f"scenario-{chr(97 + index)}",
+            id=f"scenario-{item.scenario_id}",
             plan_id="current-plan",
-            name=f"节点 {chr(65 + index)}",
-            exit_month=exit_month,
+            name=item.label,
+            exit_month=item.exit_month,
             post_fire_monthly_income_cents=yuan_to_cents(
-                post_fire_monthly_income_yuan
+                item.post_fire_monthly_income_yuan
             ),
         )
-        for index, exit_month in enumerate(exit_months)
+        for item in scenario_inputs
+    ]
+
+
+def _forecast_scenario(
+    *,
+    scenario_input: ScenarioInput,
+    initial_assets_cents: int,
+    as_of_month: YearMonth,
+    state: MutableMapping[str, Any],
+    annual_return_bps: int,
+) -> list[AssetPoint]:
+    months = [
+        as_of_month.add_months(offset)
+        for offset in range(
+            as_of_month.months_until(scenario_input.exit_month) + 1
+        )
+    ]
+    monthly_saving_by_month = {
+        month: yuan_to_cents(scenario_input.monthly_income_yuan)
+        - _monthly_budget_cents(year=month.year, state=state)
+        for month in months
+    }
+    return forecast_assets(
+        initial_assets_cents=initial_assets_cents,
+        as_of_month=as_of_month,
+        end_month=scenario_input.exit_month,
+        monthly_saving_cents=0,
+        events=_build_events(income_rows=scenario_input.one_time_income_rows),
+        monthly_saving_by_month=monthly_saving_by_month,
+        annual_return_bps=annual_return_bps,
+    )
+
+
+def _target_assets_for_points(
+    *,
+    points: Sequence[AssetPoint],
+    annual_active_income_cents: int,
+    withdrawal_rate_bps: int,
+    state: MutableMapping[str, Any],
+) -> list[int]:
+    return [
+        required_assets_for_budget(
+            annual_budget_cents=_annual_budget_for_forecast_year(
+                year=point.month.year,
+                state=state,
+            ).total_cents,
+            annual_active_income_cents=annual_active_income_cents,
+            withdrawal_rate_bps=withdrawal_rate_bps,
+        )
+        for point in points
     ]
 
 
 def _evaluate_scenarios(
     *,
     scenarios: Sequence[Scenario],
-    points: Sequence[AssetPoint],
+    points_by_scenario: Mapping[str, Sequence[AssetPoint]],
     withdrawal_rate_bps: int,
     state: MutableMapping[str, Any],
 ) -> list[ScenarioResult]:
-    points_by_month = {point.month: point for point in points}
     evaluable = [
         scenario
         for scenario in scenarios
-        if points_by_month[scenario.exit_month].closing_assets_cents >= 0
-        and get_annual_budget(year=scenario.exit_month.year, state=state).total_cents
+        if _scenario_exit_point(scenario, points_by_scenario).closing_assets_cents >= 0
+        and _annual_budget_for_forecast_year(
+            year=scenario.exit_month.year,
+            state=state,
+        ).total_cents
         > 0
     ]
     preliminary = [
         evaluate_scenario(
             scenario=scenario,
-            exit_assets_cents=points_by_month[scenario.exit_month].closing_assets_cents,
+            exit_assets_cents=_scenario_exit_point(
+                scenario,
+                points_by_scenario,
+            ).closing_assets_cents,
             annual_budget_cents=_annual_budget_for_forecast_year(
                 year=scenario.exit_month.year,
                 state=state,
@@ -434,7 +490,10 @@ def _evaluate_scenarios(
     return [
         evaluate_scenario(
             scenario=scenario,
-            exit_assets_cents=points_by_month[scenario.exit_month].closing_assets_cents,
+            exit_assets_cents=_scenario_exit_point(
+                scenario,
+                points_by_scenario,
+            ).closing_assets_cents,
             annual_budget_cents=_annual_budget_for_forecast_year(
                 year=scenario.exit_month.year,
                 state=state,
@@ -444,6 +503,18 @@ def _evaluate_scenarios(
         )
         for scenario in evaluable
     ]
+
+
+def _scenario_exit_point(
+    scenario: Scenario,
+    points_by_scenario: Mapping[str, Sequence[AssetPoint]],
+) -> AssetPoint:
+    points = points_by_scenario.get(scenario.id.removeprefix("scenario-"))
+    if not points:
+        raise ValueError(f"missing forecast points for {scenario.id}")
+    if points[-1].month != scenario.exit_month:
+        raise ValueError(f"forecast does not end at {scenario.exit_month}")
+    return points[-1]
 
 
 def _forecast_row(point: AssetPoint) -> dict[str, str]:
