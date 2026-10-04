@@ -1,6 +1,13 @@
 """Streamlit application entry point."""
 
+import sys
+from pathlib import Path
+
 import streamlit as st
+
+SRC_DIRECTORY = Path(__file__).resolve().parent / "src"
+if str(SRC_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(SRC_DIRECTORY))
 
 from fire_planner.ui.pages.assets import render_assets_page
 from fire_planner.ui.pages.home import render_home_page
