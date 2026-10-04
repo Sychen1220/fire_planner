@@ -68,7 +68,8 @@ def render_calculation_page() -> None:
 
     st.markdown("**一次性收入（可添加多条）**")
     one_time_income_rows: list[tuple[int, YearMonth]] = []
-    for index in range(3):
+    income_row_count = int(st.session_state.get("calculation_income_row_count", 1))
+    for index in range(income_row_count):
         income_columns = st.columns(2)
         with income_columns[0]:
             amount_yuan = int(
@@ -91,6 +92,12 @@ def render_calculation_page() -> None:
             )
         if amount_yuan:
             one_time_income_rows.append((amount_yuan, event_month))
+
+    st.button(
+        "＋ 添加一次性收入",
+        key="add_calculation_income_row",
+        on_click=_add_income_row,
+    )
 
     expense_columns = st.columns(2)
     with expense_columns[0]:
@@ -305,6 +312,12 @@ def _render_forecast_inputs() -> tuple[date, int, int, float]:
             )
         )
     return as_of_date, horizon_months, monthly_income_yuan, withdrawal_rate
+
+
+def _add_income_row() -> None:
+    st.session_state["calculation_income_row_count"] = (
+        int(st.session_state.get("calculation_income_row_count", 1)) + 1
+    )
 
 
 def _month_selectbox(
