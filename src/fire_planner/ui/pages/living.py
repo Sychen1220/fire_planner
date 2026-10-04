@@ -11,6 +11,7 @@ import streamlit as st
 from fire_planner.domain.budget import AnnualBudget, calculate_annual_budget
 from fire_planner.domain.models import BudgetCadence, BudgetItem
 from fire_planner.domain.money import yuan_to_cents
+from fire_planner.infrastructure.storage import save_form_state
 from fire_planner.ui.formatters import format_cny, format_wan
 
 
@@ -146,6 +147,7 @@ def render_living_page() -> None:
         )
 
     if st.button("保存生活预算", type="primary", width="stretch"):
+        save_form_state(st.session_state)
         st.success(f"已保存 {year} 年生活预算。")
 
 

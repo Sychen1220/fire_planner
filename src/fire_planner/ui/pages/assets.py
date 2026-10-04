@@ -9,6 +9,7 @@ import streamlit as st
 
 from fire_planner.domain.models import AssetHolding, AssetType
 from fire_planner.domain.money import yuan_to_cents
+from fire_planner.infrastructure.storage import save_form_state
 from fire_planner.ui.formatters import format_wan
 
 
@@ -149,4 +150,5 @@ def render_assets_page() -> None:
         st.info("房贷余额不会直接从 FIRE 资产中扣除，请确认房贷月供已包含在生活预算中。")
 
     if st.button("保存资产信息", type="primary", width="stretch"):
+        save_form_state(st.session_state)
         st.success("资产信息已保存。")

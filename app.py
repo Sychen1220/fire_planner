@@ -13,6 +13,7 @@ from fire_planner.ui.pages.assets import render_assets_page
 from fire_planner.ui.pages.calculation import render_calculation_page
 from fire_planner.ui.pages.home import render_home_page
 from fire_planner.ui.pages.living import render_living_page
+from fire_planner.infrastructure.storage import load_persisted_state
 
 
 PAGE_RENDERERS = {
@@ -25,6 +26,7 @@ PAGE_RENDERERS = {
 
 def main() -> None:
     st.set_page_config(page_title="半 FIRE Planner", page_icon="🔥", layout="wide")
+    load_persisted_state(st.session_state)
     st.markdown(
         """
         <style>
