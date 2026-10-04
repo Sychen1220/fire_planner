@@ -38,9 +38,11 @@ def test_prd_example_is_yellow_with_exact_calculation() -> None:
         exit_assets_cents=160_000_000,
         annual_budget_cents=12_000_000,
         withdrawal_rate_bps=350,
+        annual_return_bps=350,
     )
 
     assert result.annual_withdrawal_capacity_cents == 5_600_000
+    assert result.annual_investment_income_cents == 5_600_000
     assert result.annual_active_income_cents == 6_000_000
     assert result.annual_available_cents == 11_600_000
     assert result.annual_gap_cents == 400_000
@@ -55,6 +57,7 @@ def test_green_status_includes_exact_budget_coverage() -> None:
         exit_assets_cents=171_428_572,
         annual_budget_cents=12_000_000,
         withdrawal_rate_bps=350,
+        annual_return_bps=350,
     )
 
     assert result.annual_available_cents == 12_000_000
@@ -91,6 +94,7 @@ def test_orange_status_points_to_earliest_later_green_candidate() -> None:
         exit_assets_cents=171_428_572,
         annual_budget_cents=12_000_000,
         withdrawal_rate_bps=350,
+        annual_return_bps=350,
     )
     latest_green = evaluate_scenario(
         scenario=scenario(
@@ -100,6 +104,7 @@ def test_orange_status_points_to_earliest_later_green_candidate() -> None:
         exit_assets_cents=210_000_000,
         annual_budget_cents=12_000_000,
         withdrawal_rate_bps=350,
+        annual_return_bps=350,
     )
 
     result = evaluate_scenario(
@@ -111,6 +116,7 @@ def test_orange_status_points_to_earliest_later_green_candidate() -> None:
         exit_assets_cents=160_000_000,
         annual_budget_cents=12_000_000,
         withdrawal_rate_bps=350,
+        annual_return_bps=350,
         candidate_results=[latest_green, later_green],
     )
 
@@ -179,6 +185,7 @@ def test_required_monthly_income_accounts_for_other_annual_income() -> None:
         exit_assets_cents=160_000_000,
         withdrawal_rate_bps=350,
         annual_other_income_cents=400_000,
+        annual_return_bps=350,
     )
 
     assert required_income == 500_000

@@ -25,6 +25,17 @@ def calculate_sustainable_withdrawal(
     return apply_basis_points(exit_assets_cents, withdrawal_rate_bps)
 
 
+def calculate_annual_investment_income(
+    *,
+    exit_assets_cents: int,
+    annual_return_bps: int,
+) -> int:
+    """Calculate annual investment income without treating withdrawals as income."""
+    require_non_negative_cents(exit_assets_cents, "exit_assets_cents")
+    require_basis_points(annual_return_bps, "annual_return_bps", allow_zero=True)
+    return apply_basis_points(exit_assets_cents, annual_return_bps)
+
+
 def calculate_post_fire_income(
     *,
     monthly_income_cents: int,
@@ -78,6 +89,7 @@ def required_monthly_income(
     exit_assets_cents: int,
     withdrawal_rate_bps: int,
     annual_other_income_cents: int = 0,
+    annual_return_bps: int = 0,
 ) -> int:
     """Return the minimum recurring monthly income needed for the budget."""
     require_non_negative_cents(annual_budget_cents, "annual_budget_cents")
@@ -86,14 +98,14 @@ def required_monthly_income(
         annual_other_income_cents,
         "annual_other_income_cents",
     )
-    annual_withdrawal_cents = calculate_sustainable_withdrawal(
+    annual_investment_income_cents = calculate_annual_investment_income(
         exit_assets_cents=exit_assets_cents,
-        withdrawal_rate_bps=withdrawal_rate_bps,
+        annual_return_bps=annual_return_bps,
     )
     annual_shortfall_cents = max(
         0,
         annual_budget_cents
-        - annual_withdrawal_cents
+        - annual_investment_income_cents
         - annual_other_income_cents,
     )
     return _ceil_divide(annual_shortfall_cents, 12)
@@ -105,6 +117,7 @@ def evaluate_scenario(
     exit_assets_cents: int,
     annual_budget_cents: int,
     withdrawal_rate_bps: int,
+    annual_return_bps: int = 0,
     candidate_results: Sequence[ScenarioResult] = (),
 ) -> ScenarioResult:
     """Evaluate one exit scenario and return a deterministic result."""
@@ -115,18 +128,23 @@ def evaluate_scenario(
     if annual_budget_cents == 0:
         raise ValueError("annual_budget_cents must be positive")
     require_basis_points(withdrawal_rate_bps, "withdrawal_rate_bps")
+    require_basis_points(annual_return_bps, "annual_return_bps", allow_zero=True)
     _validate_candidate_results(candidate_results)
 
     annual_withdrawal_capacity_cents = calculate_sustainable_withdrawal(
         exit_assets_cents=exit_assets_cents,
         withdrawal_rate_bps=withdrawal_rate_bps,
     )
+    annual_investment_income_cents = calculate_annual_investment_income(
+        exit_assets_cents=exit_assets_cents,
+        annual_return_bps=annual_return_bps,
+    )
     annual_active_income_cents = calculate_post_fire_income(
         monthly_income_cents=scenario.post_fire_monthly_income_cents,
         annual_income_cents=scenario.post_fire_annual_income_cents,
     )
     annual_available_cents = ensure_money_limit(
-        annual_withdrawal_capacity_cents + annual_active_income_cents
+        annual_investment_income_cents + annual_active_income_cents
     )
     annual_gap_cents = calculate_fire_gap(
         annual_budget_cents=annual_budget_cents,
@@ -149,6 +167,7 @@ def evaluate_scenario(
         exit_assets_cents=exit_assets_cents,
         annual_budget_cents=annual_budget_cents,
         annual_withdrawal_capacity_cents=annual_withdrawal_capacity_cents,
+        annual_investment_income_cents=annual_investment_income_cents,
         annual_active_income_cents=annual_active_income_cents,
         annual_available_cents=annual_available_cents,
         annual_gap_cents=annual_gap_cents,
@@ -159,6 +178,7 @@ def evaluate_scenario(
             exit_assets_cents=exit_assets_cents,
             withdrawal_rate_bps=withdrawal_rate_bps,
             annual_other_income_cents=scenario.post_fire_annual_income_cents,
+            annual_return_bps=annual_return_bps,
         ),
         next_feasible_exit_month=next_feasible_exit_month,
     )

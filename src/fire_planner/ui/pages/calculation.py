@@ -95,6 +95,7 @@ def render_calculation_page() -> None:
         scenarios=scenarios,
         points_by_scenario=points_by_scenario,
         withdrawal_rate_bps=round(withdrawal_rate * 100),
+        annual_return_bps=round(annual_return_rate * 100),
         state=st.session_state,
     )
 
@@ -189,6 +190,7 @@ def render_calculation_page() -> None:
             scenario_labels[result.scenario_id],
             result,
             withdrawal_rate,
+            annual_return_rate,
         )
 
 
@@ -495,6 +497,7 @@ def _evaluate_scenarios(
     scenarios: Sequence[Scenario],
     points_by_scenario: Mapping[str, Sequence[AssetPoint]],
     withdrawal_rate_bps: int,
+    annual_return_bps: int,
     state: MutableMapping[str, Any],
 ) -> list[ScenarioResult]:
     evaluable = [
@@ -519,6 +522,7 @@ def _evaluate_scenarios(
                 state=state,
             ).total_cents,
             withdrawal_rate_bps=withdrawal_rate_bps,
+            annual_return_bps=annual_return_bps,
         )
         for scenario in evaluable
     ]
@@ -534,6 +538,7 @@ def _evaluate_scenarios(
                 state=state,
             ).total_cents,
             withdrawal_rate_bps=withdrawal_rate_bps,
+            annual_return_bps=annual_return_bps,
             candidate_results=preliminary,
         )
         for scenario in evaluable
@@ -568,10 +573,14 @@ def _render_result_card(label: str, result: ScenarioResult) -> None:
         st.markdown(f"### {label}｜{result.exit_month}")
         st.markdown(f"**{STATUS_LABELS[result.status]}**")
         st.metric("退出资产", format_wan(result.exit_assets_cents))
+        st.metric("年度投资收益", format_wan(result.annual_investment_income_cents))
         st.metric("年度可支配", format_wan(result.annual_available_cents))
         gap_label = "年度缺口" if result.annual_gap_cents > 0 else "年度结余"
         st.metric(gap_label, format_wan(abs(result.annual_gap_cents)))
         st.caption(f"生活覆盖率 {result.coverage_ratio:.1%}")
+        st.caption(
+            f"提款风险参考上限：{format_wan(result.annual_withdrawal_capacity_cents)} / 年"
+        )
 
 
 def _comparison_row(label: str, result: ScenarioResult) -> dict[str, str]:
@@ -579,9 +588,10 @@ def _comparison_row(label: str, result: ScenarioResult) -> dict[str, str]:
         "方案": label,
         "退出时间": str(result.exit_month),
         "退出资产": format_wan(result.exit_assets_cents),
-        "资产年提款": format_wan(result.annual_withdrawal_capacity_cents),
+        "年度投资收益": format_wan(result.annual_investment_income_cents),
         "主动年收入": format_wan(result.annual_active_income_cents),
         "年度可支配": format_wan(result.annual_available_cents),
+        "提款风险参考上限": format_wan(result.annual_withdrawal_capacity_cents),
         "生活预算": format_wan(result.annual_budget_cents),
         "年度缺口": format_wan(result.annual_gap_cents),
         "覆盖率": f"{result.coverage_ratio:.1%}",
@@ -607,6 +617,7 @@ def _render_formula_breakdown(
     label: str,
     result: ScenarioResult,
     withdrawal_rate: float,
+    annual_return_rate: float,
 ) -> None:
     with st.expander(
         f"{label}｜{result.exit_month} 的完整计算",
@@ -615,12 +626,13 @@ def _render_formula_breakdown(
         st.markdown(
             f"""
 1. **退出资产**：{format_cny(result.exit_assets_cents)}
-2. **资产年度提款能力**：{format_cny(result.exit_assets_cents)} × {withdrawal_rate:.2f}% = **{format_cny(result.annual_withdrawal_capacity_cents)}**
+2. **年度投资收益**：{format_cny(result.exit_assets_cents)} × {annual_return_rate:.2f}% = **{format_cny(result.annual_investment_income_cents)} / 年**
 3. **半 FIRE 后主动收入**：**{format_cny(result.annual_active_income_cents)} / 年**
-4. **年度可支配资金**：{format_cny(result.annual_withdrawal_capacity_cents)} + {format_cny(result.annual_active_income_cents)} = **{format_cny(result.annual_available_cents)}**
+4. **年度可支配资金**：{format_cny(result.annual_investment_income_cents)} + {format_cny(result.annual_active_income_cents)} = **{format_cny(result.annual_available_cents)}**
 5. **年度缺口**：{format_cny(result.annual_budget_cents)} − {format_cny(result.annual_available_cents)} = **{format_cny(result.annual_gap_cents)}**
 6. **生活覆盖率**：{format_cny(result.annual_available_cents)} ÷ {format_cny(result.annual_budget_cents)} = **{result.coverage_ratio:.1%}**
-7. **该资产下所需最低月收入**：**{format_cny(result.required_monthly_income_cents)} / 月**
+7. **提款风险参考上限**：{format_cny(result.exit_assets_cents)} × {withdrawal_rate:.2f}% = **{format_cny(result.annual_withdrawal_capacity_cents)} / 年**
+8. **该资产下所需最低月收入**：**{format_cny(result.required_monthly_income_cents)} / 月**
 """
         )
         if result.next_feasible_exit_month is not None:

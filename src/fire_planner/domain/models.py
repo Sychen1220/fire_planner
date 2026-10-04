@@ -294,6 +294,7 @@ class ScenarioResult:
     exit_assets_cents: int
     annual_budget_cents: int
     annual_withdrawal_capacity_cents: int
+    annual_investment_income_cents: int
     annual_active_income_cents: int
     annual_available_cents: int
     annual_gap_cents: int
@@ -314,6 +315,7 @@ class ScenarioResult:
             "exit_assets_cents",
             "annual_budget_cents",
             "annual_withdrawal_capacity_cents",
+            "annual_investment_income_cents",
             "annual_active_income_cents",
             "annual_available_cents",
             "required_monthly_income_cents",

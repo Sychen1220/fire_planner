@@ -36,7 +36,7 @@ def render_home_page() -> None:
     metric_columns[2].metric(
         "完全 FIRE 参考值",
         format_wan(full_fire_assets_cents),
-        help="年度生活预算 ÷ 3.5%，仅作为参考。",
+        help="年度生活预算 ÷ 规划提款率，用于提款风险参考，不作为投资收益。",
     )
 
     completed_steps = int(annual_budget.total_cents > 0) + int(
