@@ -28,7 +28,7 @@ def build_fire_runway_chart(
 ) -> go.Figure:
     """Build the FIRE runway from values already produced by the domain engine."""
     figure = go.Figure()
-    colors = {"a": "#ff6b35", "b": "#2b6cb0", "c": "#805ad5"}
+    colors = ["#ff6b35", "#2b6cb0", "#805ad5", "#319795", "#d69e2e"]
     for scenario_id, points in scenario_points.items():
         if (
             scenario_id not in semi_fire_targets
@@ -37,18 +37,18 @@ def build_fire_runway_chart(
             or len(points) != len(full_fire_targets[scenario_id])
         ):
             raise ValueError("chart target series must align with forecast points")
-        label = scenario_id.upper()
+        label = f"节点 {int(scenario_id) + 1}"
         months = ["当前资产"] + [str(point.month) for point in points]
-        color = colors.get(scenario_id, "#ff6b35")
+        color = colors[int(scenario_id) % len(colors)]
         figure.add_trace(
             go.Scatter(
                 x=months,
                 y=[_to_wan(initial_assets_cents)]
                 + [_to_wan(point.closing_assets_cents) for point in points],
                 mode="lines+markers",
-                name=f"节点 {label} 资产",
+                name=f"{label}资产",
                 line={"color": color, "width": 3},
-                hovertemplate="%{x}<br>节点 "
+                hovertemplate="%{x}<br>"
                 + label
                 + "资产 %{y:,.2f} 万<extra></extra>",
             )
@@ -59,7 +59,7 @@ def build_fire_runway_chart(
                 y=[_to_wan(semi_fire_targets[scenario_id][0])]
                 + [_to_wan(value) for value in semi_fire_targets[scenario_id]],
                 mode="lines",
-                name=f"节点 {label} 半 FIRE目标",
+                name=f"{label} 半 FIRE目标",
                 line={"color": color, "width": 2, "dash": "dash"},
                 hovertemplate="%{x}<br>半 FIRE目标 %{y:,.2f} 万<extra></extra>",
             )
@@ -70,7 +70,7 @@ def build_fire_runway_chart(
                 y=[_to_wan(full_fire_targets[scenario_id][0])]
                 + [_to_wan(value) for value in full_fire_targets[scenario_id]],
                 mode="lines",
-                name=f"节点 {label} 完全 FIRE参考",
+                name=f"{label} 完全 FIRE参考",
                 line={"color": color, "width": 1, "dash": "dot"},
                 hovertemplate="%{x}<br>完全 FIRE参考 %{y:,.2f} 万<extra></extra>",
             )
@@ -83,7 +83,10 @@ def build_fire_runway_chart(
                 y=[_to_wan(result.exit_assets_cents) for result in scenario_results],
                 mode="markers+text",
                 name="退出节点",
-                text=[result.scenario_id[-1].upper() for result in scenario_results],
+                text=[
+                    f"节点 {int(result.scenario_id.rsplit('-', 1)[-1]) + 1}"
+                    for result in scenario_results
+                ],
                 textposition="top center",
                 marker={
                     "color": [STATUS_COLORS[result.status] for result in scenario_results],

@@ -63,13 +63,13 @@ def render_calculation_page() -> None:
     ]
 
     current_assets_cents = get_investable_assets_cents(st.session_state)
-    st.subheader("2｜分别录入三个退出方案")
+    st.subheader("2｜分别录入退出方案")
     scenario_inputs = _render_scenario_inputs(
         month_options=month_options,
         horizon_months=horizon_months,
     )
     if len({item.exit_month for item in scenario_inputs}) != len(scenario_inputs):
-        st.error("三个退出节点需要选择不同月份。")
+        st.error("每个退出方案需要选择不同月份。")
         return
 
     scenarios = _build_scenarios(scenario_inputs)
@@ -116,9 +116,10 @@ def render_calculation_page() -> None:
     summary_columns[0].metric("当前金融资产", format_wan(current_assets_cents))
     summary_columns[1].metric("预期年化收益率", f"{annual_return_rate:.2f}%")
     summary_columns[2].metric("规划提款率", format_bps(round(withdrawal_rate * 100)))
+    first_scenario = scenario_inputs[0]
     summary_columns[3].metric(
-        "节点 A 退出资产",
-        format_wan(points_by_scenario["a"][-1].closing_assets_cents),
+        f"{first_scenario.label} 退出资产",
+        format_wan(points_by_scenario[first_scenario.scenario_id][-1].closing_assets_cents),
     )
 
     st.code(
@@ -162,13 +163,17 @@ def render_calculation_page() -> None:
         st.warning("退出节点的生活预算必须大于 0，且退出资产不能为负数。")
         return
 
+    scenario_labels = {item.scenario_id: item.label for item in scenario_inputs}
     result_columns = st.columns(len(results))
-    for index, (column, result) in enumerate(zip(result_columns, results, strict=True)):
+    for column, result in zip(result_columns, results, strict=True):
         with column:
-            _render_result_card(chr(65 + index), result)
+            _render_result_card(scenario_labels[result.scenario_id], result)
 
     st.dataframe(
-        [_comparison_row(chr(65 + index), result) for index, result in enumerate(results)],
+        [
+            _comparison_row(scenario_labels[result.scenario_id], result)
+            for result in results
+        ],
         hide_index=True,
         width="stretch",
     )
@@ -176,8 +181,12 @@ def render_calculation_page() -> None:
 
     st.subheader("5｜核对计算公式")
     st.write("每个数字都来自领域计算引擎。展开任一节点，可以逐项核对。")
-    for index, result in enumerate(results):
-        _render_formula_breakdown(chr(65 + index), result, withdrawal_rate)
+    for result in results:
+        _render_formula_breakdown(
+            scenario_labels[result.scenario_id],
+            result,
+            withdrawal_rate,
+        )
 
 
 def _render_forecast_inputs() -> tuple[date, int, float, float]:
@@ -236,9 +245,11 @@ def _render_scenario_inputs(
     horizon_months: int,
 ) -> list[ScenarioInput]:
     inputs: list[ScenarioInput] = []
-    for index, default_offset in enumerate((6, 10, 18)):
-        scenario_id = chr(97 + index)
-        label = f"节点 {chr(65 + index)}"
+    scenario_count = max(1, int(st.session_state.get("calculation_scenario_count", 1)))
+    for index in range(scenario_count):
+        scenario_id = _scenario_id(index)
+        label = _scenario_label(index)
+        default_offset = min(6 + index * 4, horizon_months)
         with st.container(border=True):
             st.markdown(f"**{label}｜退出前收入与退出时间**")
             exit_month = _month_selectbox(
@@ -310,17 +321,37 @@ def _render_scenario_inputs(
                 on_click=_add_scenario_income_row,
                 args=(row_count_key,),
             )
-        inputs.append(
-            ScenarioInput(
-                scenario_id=scenario_id,
-                label=label,
-                exit_month=exit_month,
-                monthly_income_yuan=monthly_income_yuan,
-                post_fire_monthly_income_yuan=post_fire_monthly_income_yuan,
-                one_time_income_rows=tuple(one_time_income_rows),
+            inputs.append(
+                ScenarioInput(
+                    scenario_id=scenario_id,
+                    label=label,
+                    exit_month=exit_month,
+                    monthly_income_yuan=monthly_income_yuan,
+                    post_fire_monthly_income_yuan=post_fire_monthly_income_yuan,
+                    one_time_income_rows=tuple(one_time_income_rows),
+                )
             )
-        )
+        st.divider()
+    st.button(
+        "＋ 添加退出方案",
+        key="add_calculation_scenario",
+        on_click=_add_scenario,
+    )
     return inputs
+
+
+def _scenario_id(index: int) -> str:
+    return str(index)
+
+
+def _scenario_label(index: int) -> str:
+    return f"节点 {index + 1}"
+
+
+def _add_scenario() -> None:
+    st.session_state["calculation_scenario_count"] = (
+        int(st.session_state.get("calculation_scenario_count", 1)) + 1
+    )
 
 
 def _add_scenario_income_row(row_count_key: str) -> None:
