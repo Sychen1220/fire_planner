@@ -164,7 +164,9 @@ def render_calculation_page() -> None:
         st.warning("退出节点的生活预算必须大于 0，且退出资产不能为负数。")
         return
 
-    scenario_labels = {item.scenario_id: item.label for item in scenario_inputs}
+    scenario_labels = {
+        f"scenario-{item.scenario_id}": item.label for item in scenario_inputs
+    }
     result_columns = st.columns(len(results))
     for column, result in zip(result_columns, results, strict=True):
         with column:
