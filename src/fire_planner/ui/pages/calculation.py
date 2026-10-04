@@ -609,7 +609,7 @@ def _render_formula_breakdown(
     withdrawal_rate: float,
 ) -> None:
     with st.expander(
-        f"节点 {label}｜{result.exit_month} 的完整计算",
+        f"{label}｜{result.exit_month} 的完整计算",
         expanded=label == "A",
     ):
         st.markdown(
