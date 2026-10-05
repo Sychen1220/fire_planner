@@ -327,19 +327,24 @@ def _render_scenario_inputs(
                     )
                 if amount_yuan:
                     one_time_income_rows.append((amount_yuan, event_month))
-            st.button(
-                f"＋ {label} 添加一次性收入",
-                key=f"add_calculation_{scenario_id}_income_row",
-                on_click=_add_scenario_income_row,
-                args=(row_count_key,),
-            )
-            st.button(
-                f"− {label} 删除最后一条收入",
-                key=f"remove_calculation_{scenario_id}_income_row",
-                on_click=_remove_scenario_income_row,
-                args=(scenario_id, row_count_key),
-                disabled=row_count == 0,
-            )
+            income_action_columns = st.columns(2)
+            with income_action_columns[0]:
+                st.button(
+                    "＋ 添加一次性收入",
+                    key=f"add_calculation_{scenario_id}_income_row",
+                    on_click=_add_scenario_income_row,
+                    args=(row_count_key,),
+                    use_container_width=True,
+                )
+            with income_action_columns[1]:
+                st.button(
+                    "− 删除最后一条收入",
+                    key=f"remove_calculation_{scenario_id}_income_row",
+                    on_click=_remove_scenario_income_row,
+                    args=(scenario_id, row_count_key),
+                    disabled=row_count == 0,
+                    use_container_width=True,
+                )
             inputs.append(
                 ScenarioInput(
                     scenario_id=scenario_id,
@@ -350,17 +355,23 @@ def _render_scenario_inputs(
                 )
             )
         st.divider()
-    st.button(
-        "＋ 添加退出方案",
-        key="add_calculation_scenario",
-        on_click=_add_scenario,
-    )
-    st.button(
-        "− 删除最后一个退出方案",
-        key="remove_calculation_scenario",
-        on_click=_remove_last_scenario,
-        disabled=scenario_count <= 1,
-    )
+    scenario_action_columns = st.columns(2)
+    with scenario_action_columns[0]:
+        st.button(
+            "＋ 添加退出方案",
+            key="add_calculation_scenario",
+            on_click=_add_scenario,
+            use_container_width=True,
+        )
+    with scenario_action_columns[1]:
+        st.button(
+            "− 删除最后一个退出方案",
+            key="remove_calculation_scenario",
+            on_click=_remove_last_scenario,
+            disabled=scenario_count <= 1,
+            use_container_width=True,
+        )
+    st.caption("删除操作默认移除最后一条一次性收入或最后一个退出方案。")
     return inputs
 
 
