@@ -527,4 +527,3 @@ M1 的验收证据必须同时证明：
 | 旧页面方案 ID 为位置字符串，Technical Design 要求 UUID。 | 直接复用会导致删除／重排后的身份不稳定。 | snapshot 内生成稳定 UUID；保留“节点 N”作为 display label，并在 adapter 中维护映射。 | Yes. |
 | 现有测算参数和方案尚未持久化，且起点按整月处理。 | 无法声称重启恢复完整正式计划或支持真实日终截点。 | M1 快照明确保存 `legacy_month` 语义和全部输入；真实资产截点留给 M3。 | Yes. |
 | 当前执行环境未安装 `streamlit`，本次 `pytest -q` 在收集阶段失败。 | 本次无法重新验证 77/1 基线。 | 按 README 安装 `.[dev]` 后再执行 M1-01；不要修改代码绕过导入。 | Yes, with dependency setup. |
-
