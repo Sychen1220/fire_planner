@@ -4,9 +4,11 @@
 
 **Current Milestone: M1 — Plan Persistence & Compatibility**
 
-本规格把 PRD V0.6 与 Technical Design V1.3 转换为当前一轮可执行的开发任务。M1 只交付：
+执行状态（2026-10-06 导航复核）：M1-01～M1-04 的既有验证保留；M1-05 重新打开，导航归属待修正与验收。此前 [M1 验收记录](m1-acceptance.md) 的 128 项测试通过未覆盖其他模块中计划控件应隐藏的要求，不能作为新增 T25 的通过证据。下一项为完成本文 M1-05 导航修正，再进入 M2-01。本次仅修改文档，不修改页面代码；Current Code Baseline 保留原实施前审计。
 
-- 保留现有四个 Planner 页面、计算公式和交互行为；
+本规格把 PRD V0.7 与 Technical Design V1.4 转换为当前一轮可执行的开发任务。页面层级修正覆盖旧“四页入口全部保留”的要求；历史计算基线继续有效。M1 只交付：
+
+- 保留生活、资产、测算三个工作页及计算公式和表单交互；移除独立首页入口，必要摘要和引导归入已有工作区域；
 - 将一次完整测算保存为正式的不可变 `PlanRevision`；
 - 在 `app_state.current_plan_revision_id` 中保存唯一当前正式计划指针；
 - 明确 `session_state` / `form_state` 草稿与 Confirmed Plan 的边界；
@@ -19,8 +21,8 @@ M1 不改变财务算法，不实现实际收支驱动预测、消费模拟、AI
 
 ## 2. Source Documents
 
-- [产品需求](product-requirements.md)（PRD V0.6）：A01、P0-1、数据边界及原 Planner 兼容要求。
-- [技术设计](technical-design.md)（V1.3）：PlanSnapshot、PlanRevision、迁移、Draft → Confirmed 边界、事务及 M1 阶段限制。
+- [产品需求](product-requirements.md)（PRD V0.7）：三个工作页、首页内容归置、A01、P0-1、数据边界及原财务能力兼容要求。
+- [技术设计](technical-design.md)（V1.4）：条件路由、默认进入测算、旧首页状态归一、PlanSnapshot、PlanRevision、迁移、Draft → Confirmed 边界及 M1 阶段限制。
 - [开发计划](development-plan.md)（V1.0）：M1-01 至 M1-05 的顺序和出口条件。
 - [回归基线](regression-baseline.md)：既有计算、页面和 BASE-01 缺陷记录。
 - [开发 Checklist](development-checklist.md)：当前进度记录；不改变本规格的任务边界。
@@ -33,8 +35,8 @@ Technical Design 是架构约束，本文件才是本轮 Coding Agent 的执行�
 
 | Area | Current behavior | M1 implication |
 | --- | --- | --- |
-| `app.py` | 通过 `PAGE_RENDERERS` 和 `selected_page` 提供“首页／我的生活／我的资产／开始测算”四页。 | 保留现有路由和页面调用；可在外层增加最小参照区域，但不能替换四页。 |
-| `src/fire_planner/ui/pages/home.py` | 从 `session_state` 读取预算和可提款金融资产，提供进入测算按钮。 | 继续读取兼容草稿；正式计划摘要必须由服务读取。 |
+| `app.py` | 通过 `PAGE_RENDERERS` 和 `selected_page` 提供“首页／我的生活／我的资产／开始测算”四页。 | 按 V0.7 保留后三个工作页，移除首页路由，默认进入测算；局部导航和计划操作仅在 FIRE 计划显示。 |
+| `src/fire_planner/ui/pages/home.py` | 从 `session_state` 读取预算和可提款金融资产，提供进入测算按钮。 | 不再作为应用页面渲染；复用已有工作页摘要，缺失资料引导归入测算页；正式摘要由服务读取。 |
 | `src/fire_planner/ui/pages/living.py` | `BUDGET_FIELDS`、按年份的 `budget_{year}_{field}` 控件、年度预算计算；保存调用 `save_form_state`。 | 预算输入仍保持原键和年度回退语义；保存必须变成页面范围的草稿保存。 |
 | `src/fire_planner/ui/pages/assets.py` | 金融资产、房产和房贷控件；`get_investable_assets_cents` 排除房产和房贷余额；保存调用 `save_form_state`。 | 保留资产口径；保存不能覆盖其他页面刚保存的草稿。 |
 | `src/fire_planner/ui/pages/calculation.py` | 在 UI 内组装 `ScenarioInput`，调用 `forecast_assets`、`evaluate_scenario`，方案 ID 目前是位置型字符串。 | 提取纯转换到 adapter；`_forecast_scenario`、`forecast_assets` 和结果语义保持不变。 |
@@ -82,10 +84,13 @@ insert immutable plan_revisions
 8. **Adapter 不重写引擎**：`planner_adapter` 只负责旧控件／草稿与 `PlanSnapshot` 的双向转换，不能成为新的 Forecast Engine。
 9. **M1 不提前实现未来模块**：Actual、ForecastService、Purchase、Conversation、AI 及复杂 stale／retry／command receipt 均不属于本轮。
 10. **单位与身份固定**：金额用整数分；比率用 basis points（例如 `350 = 3.5%`）；月份为 `YYYY-MM`，日期为 ISO；持久化身份为 UUID，A/B/E 或节点标签仅用于显示。
+11. **页面层级固定**：顶层三个模块；FIRE 计划仅含我的生活、我的资产、开始测算三个工作页。没有独立首页、计划首页或同义概览页。新会话默认进入测算，旧首页路由回退测算；同会话返回恢复上次工作页。子导航及计划操作仅在 FIRE 计划分支渲染；其他模块只允许按需展示只读正式摘要。导航变化不产生业务写入。
 
 ## 6. Implementation Tasks
 
 ### M1-01 Audit and freeze the legacy Planner baseline
+
+以下为原实施前基线。V0.7 调整后的目标不再要求保留首页导航及其跳转按钮；M1-05 可更新对应 UI 断言，所有财务 fixture、金额、日期语义和表单保存断言保持不变。
 
 **Goal**
 
@@ -296,9 +301,11 @@ M1-02、M1-03。
 
 ### M1-05 Adapt the legacy UI, Draft boundary, and restart recovery
 
+状态：重新打开。已有保存／恢复和 BASE-01 验证保留；本次追加导航修正任务，待实现与验证。
+
 **Goal**
 
-让现有四页继续工作，同时用 adapter 和明确的 Confirm 操作连接正式计划，修复跨页草稿覆盖并验证重启恢复。
+让生活、资产、测算三个工作页继续工作并明确归属 FIRE 计划，移除多余首页层级并归置其必要内容；用 adapter 和明确的 Confirm 操作连接正式计划，验证跨页保存、跨模块草稿保留、非当前模块控件隐藏及重启恢复。
 
 **Input**
 
@@ -320,14 +327,20 @@ M1-01、M1-03、M1-04。
 
 **Must**
 
-- 旧页面仍使用原 widget keys、预算年度回退、资产口径、方案输入、图表和计算函数；adapter 只转换输入／输出，不重写算法。
+- 生活、资产、测算仍使用原 widget keys、预算年度回退、资产口径、方案输入、图表和计算函数；adapter 只转换输入／输出，不重写算法。首页导航及按钮断言允许按新结构更新，财务预期不得改变。
 - 将 session 草稿和兼容 `form_state` 与当前正式快照分开保存；草稿可以继续试算，但正式摘要和正式计算只能读取 current pointer。
 - 只有用户点击明确的“确认／保存计划”按钮且校验成功时调用 `save_reference`；字段编辑、旧页面保存草稿、page switch、rerun、browser refresh、session restore 都不创建 revision。
 - 草稿保存采用页面范围或读改写合并：保存生活预算不能写回旧预算，保存资产不能覆盖刚保存的预算；修复并移除 BASE-01 strict xfail。
 - 有 current plan 时重启加载完整快照，恢复预算、资产、日期、假设、全部方案、事件和 selected scenario；没有正式计划时不得从草稿伪造已确认计划。
 - 参照栏显示当前 revision、选定方案及“草稿未确认”差异；选择已保存 revision 走 `select_reference`。
-- 如增加三模块入口，只提供 FIRE 计划的可用入口和 Actual／Purchase 的明确“尚未在 M1 实现”状态；不得创建实际或聊天页面、不得触发 M2–M4 服务。
-- M1 不改变旧四页主体布局，也不把场景标签 A/B/E 作为持久化 ID。
+- 顶层提供 FIRE 计划、实际收支、消费判断三个模块。FIRE 计划仅有“我的生活／我的资产／开始测算”三个工作页；移除“首页”路由，不新增全局首页、计划首页或同义概览页。模块入口与工作页导航应清楚区分层级。
+- 新会话默认进入 FIRE 计划 → 开始测算；`selected_page` 缺失或仍为旧值“首页”时回退“开始测算”。已有会话返回模块时优先恢复合法的上次工作页；路由归一不得修改任何财务数据。
+- `app.py` 先按 `selected_module` 分支；仅 FIRE 计划分支渲染 `selected_page` 子导航、当前原页面和 `render_reference_controls`。其他两个模块只显示明确的“尚未在 M1 实现”状态；不得创建实际或聊天页面、不得触发 M2–M4 服务。
+- 仅 FIRE 计划可显示：三个工作页导航、草稿参考方案、确认／保存计划、取消草稿／读取最新正式计划、历史修订及方案选择、设为正式参照。其他模块中这些控件必须不存在；按需共享摘要时拆分只读入口，从正式计划读取，M1 不强制新增摘要。
+- 旧首页的年度预算与金融资产摘要复用已有工作页指标；完全 FIRE 参考值沿用测算的公式与当前提款率，不搬入固定 3.5% 的重复展示。资料缺失引导归入测算页并跳转对应工作页；移除重复的“进入测算”按钮和欢迎页，不将默认值当成已确认资料。正式摘要与草稿展示保持来源区分。
+- 处理 Streamlit widget 清理：把 FIRE 子页位置及完整会话草稿与控件生命周期分离。离开模块不丢预算／资产／测算参数、方案与事件 UUID、草稿所选方案；返回先恢复状态再实例化控件。保持本轮编辑进入确认快照的原有时序。
+- 切换模块不写 `form_state`，不调用 `save_reference`／`select_reference`，不自动确认、取消或重新载入正式快照覆盖草稿；新会话启动与显式取消仍遵循原恢复规则。
+- M1 保留生活、资产、测算三个工作页主体和财务语义；允许必要的页内资料引导及移除首页导航壳，不把场景标签 A/B/E 作为持久化 ID。
 
 **Must Not**
 
@@ -335,6 +348,8 @@ M1-01、M1-03、M1-04。
 - 不把当前草稿自动替换正式计划，不因恢复 session 或刷新而递增 revision。
 - 不新增 `actuals.py`、`projection.py`、`purchase.py`、`actual_service.py`、`context_service.py`、`forecast_service.py`、`chat_service.py` 或 AI gateway。
 - 不增加单月实际详情面板、消费表单墙、强制决定／复盘流程或原型演示数据。
+- 不在实际收支／消费判断分支实例化 FIRE 工作页导航或计划管理控件；不能以 disabled 或 CSS 隐藏替代条件渲染，也不能通过执行隐藏页面来保留 widget 状态。
+- 不把旧首页改名为“概览”后继续保留第四个子页，不把原首页整页嵌入 FIRE 计划之上形成重复欢迎区；保留有效信息不要求保留旧页面容器。
 
 **Acceptance Criteria**
 
@@ -344,6 +359,7 @@ M1-01、M1-03、M1-04。
 - **Case D — save failure**：确认新计划时注入 DB failure，旧 revision 仍可读，pointer 仍指向旧 revision，界面不显示保存成功。
 - **Case E — restart**：保存后新建 AppTest／重启应用，完整方案与旧 Planner 逐月计算结果一致。
 - 同会话先保存 11,000 元预算，再到资产页保存资产，重启后预算仍为 11,000 元；BASE-01 strict xfail 可删除。
+- **Cases J–M — module hierarchy**：无正式计划及已有正式计划两种状态下，验证 FIRE 计划仅有三个工作页，无首页或同义概览；新会话和旧首页状态进入测算。从各工作页切到其他模块再返回，子页、草稿和身份保留，正式指针、修订数量及已保存草稿不变，非当前页面 renderer 和计划写服务未执行。
 
 **Test Cases**
 
@@ -351,6 +367,15 @@ M1-01、M1-03、M1-04。
 - AppTest 覆盖 Cases A–E、页面切换、刷新、草稿取消、正式计划选择和无正式计划状态。
 - `tests/test_planner_adapter.py` 覆盖旧字段到 snapshot、snapshot 到旧页面输入、stable ID 和 legacy_month 标记。
 - M1-04 的 service transaction tests 在 UI 入口再次验证，确保 render 不隐式写入。
+- 在 `tests/test_existing_ui.py` 补充 Cases J–M／技术 T25：精确检查三个工作页及默认路由，验证首页／概览入口不存在，非当前模块控件不存在；用调用记录验证未执行非当前页面和计划写服务。这些测试为待新增，不能用原 128 项通过替代。
+- `test_original_pages_and_home_calculation_action` 应改为三个工作页与默认测算入口测试；其他测试中经首页按钮进入测算的辅助步骤改为新入口。原资产、预算、逐月结果、图表与保存恢复的断言继续保留，不通过删掉财务断言适配结构变化。
+
+**导航修正执行顺序**
+
+1. 调整 `app.py` 条件路由及导航层级：移除首页项及 renderer 调用，保留三个工作页 keys，定义默认测算及旧首页回退；调整 `ui/components.py` 调用边界，必要摘要／资料引导按 PRD 归入现有区域。
+2. 在 `ui/planner_adapter.py` 或现有会话适配中保留局部页面位置与草稿，处理控件未渲染时的清理；不修改数据库结构或财务算法。
+3. 补齐上述 AppTest，并运行原计算、保存及恢复回归；人工核对三个模块的导航和操作可见范围。
+4. 通过后再更新 M1-05、A01、T25 和验收记录；届时同步开发计划、Checklist 与 README 的完成状态。本次文档修订不代表导航修复已交付。
 
 ## 7. Dependency Graph
 
@@ -427,6 +452,8 @@ M1 不创建或实现：
 
 ## 9. Files That Must Not Be Modified
 
+V0.7 的明确例外：可以修改 `app.py` 的首页路由、`home.py` 接线和首页入口相关 UI 测试，以落实三个工作页结构；相应功能信息按 PRD 归置。该例外不允许改变下面的领域算法、金额预期或日期语义。
+
 除 M1-05 明确的最小兼容接线外，不得修改以下文件的业务行为或断言：
 
 - `src/fire_planner/domain/forecast.py`、`src/fire_planner/domain/scenario.py`、`src/fire_planner/domain/money.py`、`src/fire_planner/domain/budget.py`、`src/fire_planner/domain/validation.py`
@@ -447,8 +474,9 @@ M1 的验收证据必须同时证明：
 5. `app_state.current_plan_revision_id` 唯一、可空且始终指向存在的 revision；选定 scenario 属于该 revision。
 6. revision 插入和 current pointer 更新同事务；注入失败后旧计划仍然可读且指针不变。
 7. 重新启动后正式计划、全部方案和 legacy 计算结果恢复一致。
-8. BASE-01 通过，旧四页、旧图表、原公式和既有测试均无回归。
+8. BASE-01 通过，三个工作页的表单行为、旧图表、原公式及财务测试均无回归；首页入口相关 UI 断言按新需求调整。
 9. 不需要 AI 配置，不创建 M2–M5 业务写入或服务。
+10. FIRE 计划仅有三个工作页及模块内计划管理，无首页或同义概览入口；新会话和旧首页状态进入测算。其他模块不运行 Planner renderer 或计划写服务；切换返回保留上次工作页及完整草稿，T25 通过。
 
 ## 11. Test Cases
 
@@ -463,22 +491,26 @@ M1 的验收证据必须同时证明：
 | G | 迁移中途异常或 schema version 高于当前 | rollback／可读错误；不降级、不损坏旧库 | PRD A14、Technical T19 |
 | H | 同会话先保存预算再保存资产 | 后一次保存不覆盖前一次预算；严格 xfail 删除并通过 | PRD A01/A14、`regression-baseline.md` BASE-01 |
 | I | 复现既有 12% 收益、退出当月收入、负余额 fixture | 逐月结果、`ROUND_HALF_UP`、负余额收益为零与基线一致 | PRD P0-1、Technical T01 |
+| J | 无正式计划；依次进入 FIRE 计划、实际收支、消费判断 | FIRE 计划仅显示生活、资产、测算三个子页入口；所有模块均无首页／概览入口；其他模块仅显示待开发及可选只读摘要，无计划编辑控件，不要求先确认计划 | PRD A01、Technical T25 |
+| K | 已确认计划且有未确认编辑；从每个 FIRE 子页分别切到另外两个模块，再返回 | 非 FIRE 模块没有子导航、草稿方案、确认／取消及历史选择控件；返回恢复上次子页、输入及 UUID；正式指针、修订数和 form_state 不变 | PRD A01、Technical T24/T25 |
+| L | 记录 renderer 与计划写服务调用；在其他模块重复 rerun 后返回 FIRE 计划 | 其他模块不调用任何原页面 renderer、`save_reference` 或 `select_reference`；返回只渲染选中的原页面，不自动确认 | PRD A01、Technical T25 |
+| M | 新建会话；或带旧 `selected_page = 首页` 的会话重新运行；分别有／无正式计划 | 进入 FIRE 计划时展示开始测算，不渲染 home；缺失资料有对应工作页入口，默认值仍为草稿；不创建修订、不写 form_state、不改变正式指针；合法的上次工作页不被默认值覆盖 | PRD A01、Technical T25 |
 
 实现前和实现后都必须运行同一 legacy 测试集合；新增测试必须使用临时 SQLite 路径和固定 fixture。无法在缺失依赖的环境中执行的测试必须明确标记为未验证，不能宣称通过。
 
 ## 12. M1 Definition of Done
 
-- [ ] PRD、Technical Design 和本规格的 M1 边界没有被违反。
-- [ ] Draft 与 Confirmed Plan 明确分离，`form_state` 没有成为第二个正式来源。
-- [ ] `PlanSnapshot`、`PlanRevision` 和 UUID／单位／schema 校验已实现。
-- [ ] `plan_revisions` 正确持久化，`app_state.current_plan_revision_id` 正确指向当前计划。
-- [ ] Confirm 是唯一创建 revision 的正式入口；PlanRevision immutable。
-- [ ] Confirm transaction atomic；DB failure 不破坏旧计划。
-- [ ] 旧库迁移、备份、重复迁移、未知新版拒绝和失败回滚有测试证据。
-- [ ] 重启恢复完整 confirmed plan、全部方案和选定 scenario。
-- [ ] BASE-01 修复；既有 Planner 计算、页面和图表行为不变。
-- [ ] legacy regression tests 与 M1 新测试均通过。
-- [ ] 没有 M2/M3/M4/M5 实现泄漏，没有第二个正式计划来源。
+- [ ] FIRE 计划仅含生活、资产、测算三个工作页，移除首页层级；默认路由、条件渲染及 PRD A01／Technical T25 验收通过。
+- [x] Draft 与 Confirmed Plan 明确分离，`form_state` 没有成为第二个正式来源。
+- [x] `PlanSnapshot`、`PlanRevision` 和 UUID／单位／schema 校验已实现。
+- [x] `plan_revisions` 正确持久化，`app_state.current_plan_revision_id` 正确指向当前计划。
+- [x] Confirm 是唯一创建 revision 的正式入口；PlanRevision immutable。
+- [x] Confirm transaction atomic；DB failure 不破坏旧计划。
+- [x] 旧库迁移、备份、重复迁移、未知新版拒绝和失败回滚有测试证据。
+- [x] 重启恢复完整 confirmed plan、全部方案和选定 scenario。
+- [x] BASE-01 修复；既有 Planner 计算、页面和图表行为不变。
+- [ ] legacy 财务回归与新 UI 测试均通过（既有 128 项已通过；首页相关 UI 测试待调整，新增 Cases J–M／T25 待实现与验证）。
+- [x] 没有 M2/M3/M4/M5 实现泄漏，没有第二个正式计划来源。
 
 ## 13. Out of Scope
 
@@ -513,11 +545,13 @@ M1 的验收证据必须同时证明：
 | M1-02 | 旧库安全迁移、备份、幂等、失败回滚、未知版本拒绝 | `test_migrations.py`、T19 计划迁移部分 | A14、P0-5 |
 | M1-03 | 完整快照 round-trip、单位和 stable identity 正确 | `test_planning.py`、`test_plan_repository.py` | A01、P0-1 |
 | M1-04 | Confirm 唯一入口、immutable revision、单指针、atomic rollback | `test_plan_service.py`、T24 | A01、A14、P0-1/P0-5 |
-| M1-05 | 草稿不污染正式计划、重启恢复、BASE-01 通过、四页兼容 | AppTest、`test_planner_adapter.py`、existing UI tests | A01、A04、A14、P0-1/P0-5 |
+| M1-05 | 草稿隔离、重启恢复、BASE-01 通过；三个工作页、无首页、默认测算及模块内计划操作；跨模块草稿保留，结构部分待修正 | AppTest Cases J–M／T25 待新增；首页入口 UI 断言待调整；保留 adapter 与财务回归 | A01、A04、A14、P0-1/P0-5 |
 
 如果实现过程中出现无法对应 PRD、Technical Design 或本表的新增任务，应先登记为 scope risk，并暂停扩大 M1；不能通过“future-ready”理由自动加入。
 
 ## 16. Open Issues / Baseline Conflicts
+
+当前问题 NAV-01：`app.py` 无条件渲染四页导航，`render_reference_controls` 在全部模块调用，导致 FIRE 计划编辑控件泄漏到其他模块；NAV-02：直接把原首页纳入 FIRE 计划，形成没有独立任务的多余层级。按 PRD V0.7 的三个工作页结构、M1-05 路由／状态规则及 T25 修正；完成前不能认定 M1 页面层级验收通过。以下表格保留原实施前问题记录，不代表这些历史问题仍全部存在。
 
 | Conflict | Impact | Recommended minimal resolution | Can implementation proceed? |
 | --- | --- | --- | --- |
